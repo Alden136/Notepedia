@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Notepedia</title>
+<meta name="description" content="A personal notebook that behaves like an encyclopedia.">
+<meta name="theme-color" content="#f8f9fa">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+*, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { background: #fff; }
+body {
+  --paper:#ffffff; --chrome:#f8f9fa; --rule:#a2a9b1; --hair:#c8ccd1;
+  --light:#eaecf0; --ink:#202122; --sub:#54595d; --link:#3366cc;
+  --visited:#6b4ba1; --red:#d73333; --prog:#3366cc; --prog-dark:#2a4b8d;
+  --serif: "Linux Libertine","Georgia","Times New Roman",serif;
+  --sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  --mono: ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  margin: 0; font-family: var(--sans); color: var(--ink); background: var(--paper);
+  font-size: 14px; line-height: 1.65; max-width: 720px; margin: 0 auto;
+  min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+a { color: var(--link); text-decoration: none; cursor: pointer; }
+a:hover, a:focus-visible { text-decoration: underline; }
+a.new { color: var(--red); }
+:focus-visible { outline: 2px solid var(--prog); outline-offset: 1px; }
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+
+/* ---- header ---- */
+.bar {
+  position: sticky; top: 0; z-index: 30; background: var(--paper);
+  border-bottom: 1px solid var(--rule); display: flex; align-items: center;
+  gap: 4px; padding: 6px 8px; min-height: 48px;
+  padding-top: calc(6px + env(safe-area-inset-top));
+}
+.icon { width: 36px; height: 36px; border-radius: 2px; display: grid; place-items: center; color: var(--sub); flex: none; }
+.icon:hover { background: var(--light); }
+.mark { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.globe {
+  font-family: var(--serif); font-size: 21px; line-height: 1; color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 50%; width: 30px; height: 30px;
+  display: grid; place-items: center; background: var(--chrome); flex: none;
+}
+.wordmark { font-family: var(--serif); font-size: 19px; letter-spacing: .2px; }
+.tagline { font-size: 10px; color: var(--sub); font-style: italic; white-space: nowrap; }
+
+/* ---- search ---- */
+.searchwrap { padding: 8px; border-bottom: 1px solid var(--light); background: var(--chrome); }
+.search {
+  width: 100%; padding: 9px 10px; border: 1px solid var(--rule); border-radius: 2px;
+  background: var(--paper); font-size: 16px; font-family: var(--sans); color: var(--ink);
+}
+.result { display: block; width: 100%; text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--light); }
+.result:hover { background: var(--chrome); }
+.result-t { color: var(--link); font-size: 15px; }
+.result-s { color: var(--sub); font-size: 12.5px; line-height: 1.45; margin-top: 2px; }
+
+/* ---- page ---- */
+.body { flex: 1; padding: 12px 14px 96px; }
+h1.title {
+  font-family: var(--serif); font-size: 26px; font-weight: 400; line-height: 1.25;
+  margin: 4px 0 0; padding-bottom: 6px; border-bottom: 1px solid var(--rule); word-wrap: break-word;
+}
+.subtitle { font-size: 12px; color: var(--sub); font-style: italic; margin: 5px 0 14px; }
+.hat { font-style: italic; margin: 0 0 12px 20px; font-size: 13px; }
+p { margin: 0 0 12px; }
+.sec-h {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; text-align: left; margin: 22px 0 8px; padding-bottom: 5px;
+  border-bottom: 1px solid var(--rule);
+}
+.sec-h h2 { font-family: var(--serif); font-weight: 400; font-size: 21px; margin: 0; }
+.chev { color: var(--sub); font-size: 11px; transition: transform .18s ease; }
+.chev.open { transform: rotate(180deg); }
+h3 { font-size: 15px; font-weight: 700; margin: 16px 0 6px; font-family: var(--sans); }
+ul, ol { margin: 0 0 12px; padding-left: 24px; }
+li { margin-bottom: 3px; }
+hr { border: 0; border-top: 1px solid var(--light); margin: 16px 0; }
+.indent { margin: 0 0 10px 24px; }
+dl { margin: 0 0 12px; }
+dt { font-weight: 700; }
+dd { margin: 0 0 8px 20px; }
+sup.ref { font-size: 10px; line-height: 1; vertical-align: super; }
+
+/* ---- infobox ---- */
+.infobox { border: 1px solid var(--rule); background: var(--chrome); font-size: 12.5px; line-height: 1.5; margin: 0 0 14px; width: 100%; }
+.infobox-t { font-family: var(--serif); font-size: 16px; text-align: center; padding: 6px 8px; background: var(--light); border-bottom: 1px solid var(--rule); }
+.infobox-row { display: flex; border-bottom: 1px solid var(--light); }
+.infobox-row:last-child { border-bottom: 0; }
+.infobox-k { flex: 0 0 38%; padding: 5px 8px; font-weight: 700; background: rgba(0,0,0,.015); }
+.infobox-v { flex: 1; padding: 5px 8px; }
+
+/* ---- toc ---- */
+.toc { border: 1px solid var(--rule); background: var(--chrome); padding: 8px 12px; margin: 0 0 16px; }
+.toc-t { font-family: var(--serif); font-size: 15px; text-align: center; margin-bottom: 4px; }
+.toc ol { list-style: none; padding-left: 0; margin: 0; }
+.toc li { margin: 3px 0; font-size: 13.5px; }
+.toc-n { color: var(--ink); margin-right: 6px; }
+
+/* ---- refs, cats, footer ---- */
+.refs { font-size: 12.5px; padding-left: 22px; }
+.refs li { margin-bottom: 4px; }
+.cats { border: 1px solid var(--rule); background: var(--chrome); padding: 8px 10px; margin-top: 22px; font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cat { border-left: 1px solid var(--hair); padding-left: 6px; }
+.pagefoot { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--light); font-size: 11.5px; color: var(--sub); }
+.linkshere { margin-top: 14px; font-size: 12.5px; color: var(--sub); }
+
+/* ---- main page ---- */
+.welcome { border: 1px solid var(--rule); background: var(--chrome); padding: 14px; text-align: center; margin-bottom: 16px; }
+.welcome h2 { font-family: var(--serif); font-weight: 400; font-size: 20px; margin: 0 0 4px; }
+.welcome p { font-size: 12.5px; color: var(--sub); margin: 0; }
+.box { border: 1px solid var(--rule); margin-bottom: 14px; }
+.box-h { font-family: var(--serif); font-size: 16px; padding: 6px 10px; background: var(--light); border-bottom: 1px solid var(--rule); }
+.box-b { padding: 10px; }
+.feed { border-bottom: 1px solid var(--light); padding: 8px 10px; display: block; width: 100%; text-align: left; }
+.feed:last-child { border-bottom: 0; }
+.feed-t { color: var(--link); }
+.feed-m { font-size: 11.5px; color: var(--sub); }
+
+/* ---- index ---- */
+.letter { font-family: var(--serif); font-size: 18px; border-bottom: 1px solid var(--rule); margin: 18px 0 6px; }
+.indexrow { display: block; width: 100%; text-align: left; padding: 10px 2px; border-bottom: 1px solid var(--light); }
+.indexrow .m { font-size: 11.5px; color: var(--sub); }
+
+/* ---- editor ---- */
+.toolbar { display: flex; gap: 2px; flex-wrap: wrap; border: 1px solid var(--rule); border-bottom: 0; background: var(--chrome); padding: 4px; }
+.tool { padding: 7px 10px; border-radius: 2px; font-size: 13px; color: var(--sub); }
+.tool:hover { background: var(--light); color: var(--ink); }
+.textarea {
+  width: 100%; min-height: 320px; padding: 10px; border: 1px solid var(--rule);
+  font-family: var(--mono); font-size: 14px; line-height: 1.6; color: var(--ink);
+  background: var(--paper); resize: vertical; display: block;
+}
+.summary { width: 100%; padding: 9px 10px; border: 1px solid var(--rule); margin-top: 10px; font-size: 16px; font-family: var(--sans); }
+.editnote { font-size: 11.5px; color: var(--sub); margin: 10px 0; line-height: 1.55; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+.btn { background: var(--prog); color: #fff; border: 1px solid var(--prog-dark); padding: 10px 15px; border-radius: 2px; font-weight: 700; font-size: 13.5px; }
+.btn:hover { background: var(--prog-dark); }
+.btn.quiet { background: var(--paper); color: var(--ink); border-color: var(--rule); font-weight: 400; }
+.btn.quiet:hover { background: var(--light); }
+.btn.danger { background: var(--paper); color: var(--red); border-color: var(--rule); font-weight: 400; }
+.preview { border: 1px dashed var(--rule); padding: 12px; margin-bottom: 14px; background: #fcfcfc; }
+.preview-l { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--sub); margin-bottom: 8px; }
+
+/* ---- history ---- */
+.rev { padding: 10px 2px; border-bottom: 1px solid var(--light); display: flex; gap: 8px; align-items: baseline; }
+.rev .d { font-size: 13px; }
+.delta { font-family: var(--mono); font-size: 11.5px; }
+.delta.pos { color: #14866d; } .delta.neg { color: var(--red); } .delta.zero { color: var(--sub); }
+.rev .s { font-size: 12px; color: var(--sub); font-style: italic; }
+.cur { font-size: 11px; background: var(--light); padding: 1px 5px; border-radius: 2px; color: var(--sub); }
+
+/* ---- tabs, fab ---- */
+.tabs {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 30; display: flex;
+  background: var(--chrome); border-top: 1px solid var(--rule);
+  max-width: 720px; margin: 0 auto; padding-bottom: env(safe-area-inset-bottom);
+}
+.tab { flex: 1; padding: 12px 4px 11px; text-align: center; font-size: 12.5px; color: var(--link); border-right: 1px solid var(--light); }
+.tab:last-child { border-right: 0; }
+.tab.on { background: var(--paper); color: var(--ink); font-weight: 700; box-shadow: inset 0 2px 0 var(--prog); }
+.tab:disabled { color: var(--hair); }
+.fab {
+  position: fixed; right: 16px; bottom: calc(64px + env(safe-area-inset-bottom)); z-index: 31;
+  width: 52px; height: 52px; border-radius: 50%; background: var(--prog); color: #fff;
+  display: grid; place-items: center; border: 1px solid var(--prog-dark);
+  box-shadow: 0 2px 6px rgba(0,0,0,.28); font-size: 21px;
+}
+
+/* ---- drawer, modal ---- */
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 40; }
+.drawer {
+  position: fixed; top: 0; left: 0; bottom: 0; width: 268px; background: var(--paper);
+  z-index: 41; border-right: 1px solid var(--rule); padding: 14px 0 20px;
+  animation: slide .18s ease-out; overflow-y: auto;
+}
+@keyframes slide { from { transform: translateX(-100%); } to { transform: none; } }
+.drawer-h { font-family: var(--serif); font-size: 18px; padding: 0 16px 12px; border-bottom: 1px solid var(--light); }
+.nav { display: block; width: 100%; text-align: left; padding: 12px 16px; font-size: 14px; color: var(--link); }
+.nav:hover { background: var(--chrome); }
+.nav .g { display: block; font-size: 11px; color: var(--sub); }
+.drawer-f { padding: 14px 16px 0; margin-top: 10px; border-top: 1px solid var(--light); font-size: 11.5px; color: var(--sub); }
+.modal {
+  position: fixed; z-index: 42; left: 50%; top: 20%; transform: translateX(-50%);
+  width: min(340px, 90vw); background: var(--paper); border: 1px solid var(--rule);
+  box-shadow: 0 4px 16px rgba(0,0,0,.25); padding: 16px;
+}
+.modal h3 { font-family: var(--serif); font-weight: 400; font-size: 18px; margin: 0 0 4px; }
+.modal p { font-size: 12.5px; color: var(--sub); margin: 0 0 10px; }
+.modal input { width: 100%; padding: 9px 10px; border: 1px solid var(--rule); font-size: 16px; font-family: var(--sans); }
+
+.empty { border: 1px solid var(--rule); background: var(--chrome); padding: 18px; text-align: center; font-size: 13px; color: var(--sub); }
+.toast { position: fixed; bottom: calc(58px + env(safe-area-inset-bottom)); left: 12px; z-index: 32; background: var(--chrome); border: 1px solid var(--rule); padding: 6px 10px; font-size: 11.5px; color: var(--sub); max-width: 66vw; }
+.banner { background: #fef6e7; border-bottom: 1px solid #edab00; padding: 8px 12px; font-size: 12px; }
+.setting { border-bottom: 1px solid var(--light); padding: 12px 0; }
+.setting b { display: block; font-size: 14px; }
+.setting span { font-size: 12px; color: var(--sub); }
+/* ---- images ---- */
+.thumb { display: block; border: 1px solid var(--rule); background: var(--chrome); padding: 3px; margin: 0 0 12px; }
+.thumb img { display: block; width: 100%; height: auto; background: var(--light); cursor: zoom-in; }
+.thumb .cap { display: block; font-size: 12px; padding: 5px 3px 2px; line-height: 1.45; }
+.thumb.missing { padding: 14px; text-align: center; font-size: 12px; color: var(--red); }
+@media (min-width: 560px) {
+  .thumb:not(.full) { float: right; width: 300px; margin: 2px 0 10px 16px; clear: right; }
+}
+.infobox .ibimg { display: block; width: 100%; height: auto; background: var(--light); border-bottom: 1px solid var(--rule); cursor: zoom-in; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; margin: 10px 0 4px; }
+.gtile { border: 1px solid var(--rule); background: var(--chrome); padding: 2px; display: block; text-align: left; }
+.gtile img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: var(--light); }
+.gtile .n { display: block; font-size: 10px; color: var(--sub); padding: 3px 2px 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lightbox { position: fixed; inset: 0; background: #101010; z-index: 50; display: flex; flex-direction: column; }
+.lightbox img { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
+.lightbox .lcap { color: #eaecf0; background: #000; font-size: 12.5px; padding: 12px 14px calc(14px + env(safe-area-inset-bottom)); }
+.lightbox .lclose { position: absolute; top: calc(6px + env(safe-area-inset-top)); right: 8px; color: #fff; font-size: 26px; width: 44px; height: 44px; }
+.imgmeta { font-size: 12px; color: var(--sub); margin: 8px 0 0; }
+.imgmeta b { color: var(--ink); font-weight: 700; }
+
+@media (prefers-reduced-motion: reduce) { .drawer { animation: none; } .chev { transition: none; } * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <button class="icon" id="menuBtn" aria-label="Menu">☰</button>
+  <div class="mark" id="homeBtn" role="button" tabindex="0">
+    <span class="globe">N</span>
+    <span><span class="wordmark">Notepedia</span> <span class="tagline">the notebook you write yourself</span></span>
+  </div>
+  <button class="icon" id="searchBtn" aria-label="Search">🔍</button>
+</header>
+
+<div id="banner"></div>
+<div id="searchwrap"></div>
+<main class="body" id="app"></main>
+
+<button class="fab" id="fab" aria-label="New note">✎</button>
+<nav class="tabs">
+  <button class="tab on" data-tab="read">Read</button>
+  <button class="tab" data-tab="edit" disabled>Edit</button>
+  <button class="tab" data-tab="history" disabled>History</button>
+</nav>
+<div id="overlay"></div>
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+<input type="file" id="pickImage" accept="image/*" multiple hidden>
+<input type="file" id="takePhoto" accept="image/*" capture="environment" hidden>
+
+<script>
+"use strict";
+
+/* ============================ storage ============================ */
+const KEY = "notepedia-v1";
+let memoryOnly = false;
+let mem = null;
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    memoryOnly = true;
+    return mem;
+  }
+}
+function save() {
+  const payload = JSON.stringify({ notes: state.notes, savedAt: Date.now() });
+  try {
+    localStorage.setItem(KEY, payload);
+    toast("Saved");
+  } catch (e) {
+    memoryOnly = true;
+    mem = JSON.parse(payload);
+    toast("Saved in this session only — storage is blocked here");
+    showBanner();
+  }
+}
+
+/* ==================== image store (IndexedDB) ==================== */
+const DB_NAME = "notepedia-media", DB_STORE = "images";
+let dbPromise = null;
+let imgIndex = [];
+const urlCache = new Map();
+
+function db() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((res, rej) => {
+    if (!("indexedDB" in window)) { rej(new Error("no indexeddb")); return; }
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains(DB_STORE)) d.createObjectStore(DB_STORE, { keyPath: "id" });
+    };
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+  return dbPromise;
+}
+function idbRun(mode, fn) {
+  return db().then((d) => new Promise((res, rej) => {
+    const tx = d.transaction(DB_STORE, mode);
+    const req = fn(tx.objectStore(DB_STORE));
+    tx.oncomplete = () => res(req ? req.result : undefined);
+    tx.onerror = () => rej(tx.error);
+    tx.onabort = () => rej(tx.error);
+  }));
+}
+const imgPut = (rec) => idbRun("readwrite", (s) => s.put(rec));
+const imgGet = (id) => idbRun("readonly", (s) => s.get(id));
+const imgAll = () => idbRun("readonly", (s) => s.getAll());
+const imgDel = (id) => idbRun("readwrite", (s) => s.delete(id));
+
+function refreshImgIndex() {
+  return imgAll().then((list) => {
+    imgIndex = (list || []).map((r) => ({
+      id: r.id, name: r.name, type: r.type, w: r.w, h: r.h,
+      size: recSize(r), added: r.added
+    })).sort((a, b) => b.added - a.added);
+  }).catch(() => { imgIndex = []; });
+}
+
+function recSize(r) {
+  if (!r) return 0;
+  if (r.size) return r.size;
+  if (r.bytes) return r.bytes.byteLength || 0;
+  return r.blob ? r.blob.size : 0;
+}
+// Records hold an ArrayBuffer, which every engine can put in IndexedDB.
+function recBlob(r) {
+  if (!r) return null;
+  if (r.bytes) return new Blob([r.bytes], { type: r.type || "image/webp" });
+  return r.blob || null;
+}
+
+function imageUrl(id) {
+  if (urlCache.has(id)) return Promise.resolve(urlCache.get(id));
+  return imgGet(id).then((rec) => {
+    const blob = recBlob(rec);
+    if (!blob) return null;
+    const url = URL.createObjectURL(blob);
+    urlCache.set(id, url);
+    return url;
+  }).catch(() => null);
+}
+
+function hydrateImages() {
+  document.querySelectorAll("img[data-img]:not([data-done])").forEach((el) => {
+    el.setAttribute("data-done", "1");
+    const id = el.dataset.img;
+    imageUrl(id).then((url) => {
+      if (url) { el.src = url; return; }
+      const wrap = el.closest(".thumb");
+      if (wrap) { wrap.classList.add("missing"); wrap.textContent = "Image not found: " + id; }
+      else el.remove();
+    });
+  });
+}
+
+function slug(name) {
+  return String(name).toLowerCase().replace(/\.[a-z0-9]+$/, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "image";
+}
+const fmtBytes = (b) => b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(0) + " KB" : (b / 1048576).toFixed(1) + " MB";
+
+// Shrink to fit MAX_EDGE and re-encode, so a 12 MP phone photo doesn't eat the quota.
+const MAX_EDGE = 1600;
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      let w = img.naturalWidth || 1, h = img.naturalHeight || 1;
+      if (file.type === "image/gif") { URL.revokeObjectURL(url); res({ blob: file, w: w, h: h }); return; }
+      const scale = Math.min(1, MAX_EDGE / Math.max(w, h));
+      w = Math.round(w * scale); h = Math.round(h * scale);
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      const finish = (blob) => { URL.revokeObjectURL(url); blob ? res({ blob: blob, w: w, h: h }) : rej(new Error("encode")); };
+      if (!c.toBlob) { URL.revokeObjectURL(url); rej(new Error("no toBlob")); return; }
+      c.toBlob((b) => { if (b) finish(b); else c.toBlob(finish, "image/jpeg", 0.85); }, "image/webp", 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("decode")); };
+    img.src = url;
+  });
+}
+
+function notesUsing(id) {
+  return notesList().filter((n) => n.text.indexOf("[[File:" + id) !== -1);
+}
+
+/* ============================ seed ============================ */
+const SEED = [
+  { title: "Notepedia:How to write notes", text: `Notepedia stores plain text with a few marks borrowed from wiki syntax. Everything below works in the editor.
+
+== Marks ==
+; Headings : Wrap in equals signs — == Section == and === Subsection ===
+; Bold : Three apostrophes on each side
+; Italic : Two apostrophes on each side
+; Links : Double brackets around a note title, or [[Title|other words]] to change the visible text
+; Lists : Start a line with * for bullets or # for numbers
+; Definitions : Start with a semicolon, then term, then a colon, then the meaning
+; Footnotes : Wrap text in ref tags and it collects at the bottom
+; Categories : Put [[Category:Name]] anywhere in the note
+
+== Linking is the point ==
+A link to a note that doesn't exist yet shows up red. Tapping it opens a blank note with that title already filled in, so you can write forward and let the notebook catch up. Every note lists what links to it at the bottom.
+
+== Pictures ==
+Tap the picture button in the editor toolbar to add a photo from your gallery or the camera. It goes in as:
+
+[[File:some-photo-a1b2|thumb|Your caption here]]
+
+Add ''full'' as an extra part — [[File:id|full|caption]] — to stop it sitting beside the text on a wide screen. Tap any picture to see it full size. The Images page in the menu lists everything you've added and what's using it.
+
+== Keeping your notes ==
+Everything lives on this phone, in this browser. Nothing is uploaded. Open the menu and use ''Export all notes'' now and then — it writes one JSON file you can drop into a new phone with ''Import notes''.
+
+[[Category:Notepedia]]` }
+];
+
+/* ============================ state ============================ */
+const state = {
+  notes: {},
+  view: { name: "main" },
+  tab: "read",
+  searching: false,
+  query: "",
+  open: {},
+  preview: false,
+  draftCache: null
+};
+
+/* ============================ helpers ============================ */
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+const keyOf = (t) => String(t || "").trim().replace(/_/g, " ").replace(/\s+/g, " ").toLowerCase();
+const fmtDate = (ts) => new Date(ts).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+const fmtTime = (ts) => new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+const notesList = () => Object.entries(state.notes).map(([k, n]) => Object.assign({ k: k }, n));
+const has = (t) => Boolean(state.notes[keyOf(t)]);
+
+function plainText(t) {
+  return String(t || "")
+    .replace(/\{\{[\s\S]*?\}\}/g, " ")
+    .replace(/\[\[Category:[^\]]*\]\]/gi, " ")
+    .replace(/<ref>[\s\S]*?<\/ref>/g, " ")
+    .replace(/^-{3,}$/gm, " ")
+    .replace(/^;\s*([^:]+):/gm, "$1 —")
+    .replace(/^[=;:*#]+\s*/gm, " ")
+    .replace(/=+\s*$/gm, " ")
+    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (m, a, b) => b || a)
+    .replace(/'{2,3}/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+let toastTimer = null;
+function toast(msg) {
+  let el = document.getElementById("toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    el.className = "toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.remove(), 2600);
+}
+function showBanner() {
+  document.getElementById("banner").innerHTML =
+    '<div class="banner">This page can\'t reach browser storage, so notes last only until you close the tab. Open the file from a real web address (or your home screen) rather than a preview frame.</div>';
+}
+
+/* ============================ wikitext ============================ */
+const INLINE_SRC = "<refmark>(\\d+)</refmark>|'''([\\s\\S]+?)'''|''([\\s\\S]+?)''|\\[\\[File:([^\\]|]+?)((?:\\|[^\\]]*?)*)\\]\\]|\\[\\[([^\\]|]+?)(?:\\|([^\\]]+?))?\\]\\]|\\[(https?://[^\\s\\]]+)\\s+([^\\]]+)\\]";
+
+// [[File:id|thumb|caption]] — flags and caption are both optional, in any order.
+function thumbHtml(id, params) {
+  let full = false, caption = "";
+  String(params || "").split("|").map((x) => x.trim()).filter(Boolean).forEach((p) => {
+    const low = p.toLowerCase();
+    if (low === "thumb" || low === "frame" || low === "right") return;
+    if (low === "full" || low === "wide" || low === "left") { full = true; return; }
+    caption = p;
+  });
+  return '<span class="thumb' + (full ? " full" : "") + '">' +
+    '<img data-img="' + esc(id) + '" alt="' + esc(caption || id) + '" loading="lazy">' +
+    (caption ? '<span class="cap">' + inline(caption) + "</span>" : "") + "</span>";
+}
+
+function inline(text) {
+  const re = new RegExp(INLINE_SRC, "g");
+  let out = "", last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    out += esc(text.slice(last, m.index));
+    if (m[1] !== undefined) {
+      out += '<sup class="ref">[' + m[1] + "]</sup>";
+    } else if (m[2] !== undefined) {
+      out += "<strong>" + inline(m[2]) + "</strong>";
+    } else if (m[3] !== undefined) {
+      out += "<em>" + inline(m[3]) + "</em>";
+    } else if (m[4] !== undefined) {
+      out += thumbHtml(m[4].trim(), m[5]);
+    } else if (m[6] !== undefined) {
+      const target = m[6].trim();
+      const label = (m[7] || m[6]).trim();
+      const exists = has(target);
+      out += '<a data-go="' + esc(target) + '" class="' + (exists ? "" : "new") +
+        '" title="' + esc(exists ? target : target + " (not written yet)") + '">' + esc(label) + "</a>";
+    } else if (m[8] !== undefined) {
+      out += '<a href="' + esc(m[8]) + '" target="_blank" rel="noreferrer">' + esc(m[9]) + "</a>";
+    }
+    last = m.index + m[0].length;
+  }
+  out += esc(text.slice(last));
+  return out;
+}
+
+function parse(raw) {
+  let text = String(raw || "");
+  const categories = [];
+  text = text.replace(/\[\[Category:([^\]|]+)\]\]/gi, (m, c) => {
+    const v = c.trim();
+    if (v && !categories.some((x) => keyOf(x) === keyOf(v))) categories.push(v);
+    return "";
+  });
+
+  let infobox = null;
+  text = text.replace(/\{\{Infobox\s*\|([\s\S]*?)\}\}/i, (m, inner) => {
+    const rows = []; let title = null;
+    inner.split("|").map((s) => s.trim()).filter(Boolean).forEach((pair) => {
+      const i = pair.indexOf("=");
+      if (i === -1) return;
+      const k = pair.slice(0, i).trim(), v = pair.slice(i + 1).trim();
+      if (k.toLowerCase() === "title") title = v; else rows.push([k, v]);
+    });
+    infobox = { title: title, rows: rows };
+    return "";
+  });
+
+  let hatnote = null;
+  text = text.replace(/\{\{hatnote\|([\s\S]*?)\}\}/i, (m, h) => { hatnote = h.trim(); return ""; });
+
+  const lines = text.split("\n");
+  const blocks = [];
+  let para = [];
+  const flush = () => { if (para.length) { blocks.push({ t: "p", text: para.join(" ") }); para = []; } };
+
+  for (let i = 0; i < lines.length; i++) {
+    const s = lines[i].trim();
+    if (!s) { flush(); continue; }
+    const h = s.match(/^(={2,4})\s*(.+?)\s*\1$/);
+    if (h) { flush(); blocks.push({ t: "h", level: h[1].length, text: h[2] }); continue; }
+    if (/^----+$/.test(s)) { flush(); blocks.push({ t: "hr" }); continue; }
+    if (/^[*#]\s?/.test(s)) {
+      flush();
+      const ordered = s[0] === "#";
+      const items = [];
+      while (i < lines.length) {
+        const c = lines[i].trim();
+        if (!c) break;
+        if (ordered ? c[0] !== "#" : c[0] !== "*") break;
+        items.push(c.replace(/^[*#]\s?/, ""));
+        i++;
+      }
+      i--;
+      blocks.push({ t: ordered ? "ol" : "ul", items: items });
+      continue;
+    }
+    if (/^;\s?/.test(s)) {
+      flush();
+      const items = [];
+      while (i < lines.length) {
+        const c = lines[i].trim();
+        if (!c || c[0] !== ";") break;
+        const body = c.replace(/^;\s?/, "");
+        const sep = body.indexOf(":");
+        items.push(sep === -1 ? [body.trim(), ""] : [body.slice(0, sep).trim(), body.slice(sep + 1).trim()]);
+        i++;
+      }
+      i--;
+      blocks.push({ t: "dl", items: items });
+      continue;
+    }
+    if (/^:\s?/.test(s)) { flush(); blocks.push({ t: "indent", text: s.replace(/^:\s?/, "") }); continue; }
+    para.push(s);
+  }
+  flush();
+
+  const lead = [], sections = [];
+  let cur = null;
+  blocks.forEach((b) => {
+    if (b.t === "h" && b.level === 2) { cur = { title: b.text, blocks: [] }; sections.push(cur); }
+    else if (cur) cur.blocks.push(b);
+    else lead.push(b);
+  });
+
+  const refs = [];
+  const mark = (str) => String(str).replace(/<ref>([\s\S]*?)<\/ref>/g, (m, body) => {
+    refs.push(body.trim());
+    return "<refmark>" + refs.length + "</refmark>";
+  });
+  const markBlock = (b) => {
+    if (b.text !== undefined) b.text = mark(b.text);
+    if (b.t === "ul" || b.t === "ol") b.items = b.items.map(mark);
+    if (b.t === "dl") b.items = b.items.map((pair) => [mark(pair[0]), mark(pair[1])]);
+  };
+  lead.forEach(markBlock);
+  sections.forEach((sec) => { sec.title = mark(sec.title); sec.blocks.forEach(markBlock); });
+
+  return { lead: lead, sections: sections, categories: categories, infobox: infobox, hatnote: hatnote, refs: refs };
+}
+
+function blocksHtml(blocks) {
+  return blocks.map((b) => {
+    if (b.t === "p") return "<p>" + inline(b.text) + "</p>";
+    if (b.t === "h") return "<h3>" + inline(b.text) + "</h3>";
+    if (b.t === "hr") return "<hr>";
+    if (b.t === "indent") return '<p class="indent">' + inline(b.text) + "</p>";
+    if (b.t === "ul") return "<ul>" + b.items.map((i) => "<li>" + inline(i) + "</li>").join("") + "</ul>";
+    if (b.t === "ol") return "<ol>" + b.items.map((i) => "<li>" + inline(i) + "</li>").join("") + "</ol>";
+    if (b.t === "dl") return "<dl>" + b.items.map((p) => "<dt>" + inline(p[0]) + "</dt>" + (p[1] ? "<dd>" + inline(p[1]) + "</dd>" : "")).join("") + "</dl>";
+    return "";
+  }).join("");
+}
+
+/* ============================ views ============================ */
+function backlinksOf(title) {
+  const t = keyOf(title);
+  return notesList().filter((n) => {
+    if (keyOf(n.title) === t) return false;
+    const re = /\[\[([^\]|]+?)(?:\|[^\]]+?)?\]\]/g;
+    let m;
+    while ((m = re.exec(n.text)) !== null) if (keyOf(m[1]) === t) return true;
+    return false;
+  });
+}
+
+function categoryMap() {
+  const map = {};
+  notesList().forEach((n) => {
+    parse(n.text).categories.forEach((c) => { (map[c] = map[c] || []).push(n); });
+  });
+  return map;
+}
+
+function articleHtml(note, isPreview) {
+  const doc = parse(note.text);
+  const nk = keyOf(note.title);
+  const isOpen = (i) => state.open[nk + ":" + i] !== false;
+  let h = "";
+  h += '<h1 class="title">' + esc(note.title) + "</h1>";
+  h += '<div class="subtitle">From Notepedia, your own notebook</div>';
+  if (doc.hatnote) h += '<p class="hat">' + inline(doc.hatnote) + "</p>";
+  if (doc.infobox) {
+    h += '<div class="infobox">';
+    if (doc.infobox.title) h += '<div class="infobox-t">' + esc(doc.infobox.title) + "</div>";
+    doc.infobox.rows.forEach((r) => {
+      if (r[0].toLowerCase() === "image") {
+        h += '<img class="ibimg" data-img="' + esc(r[1].trim()) + '" alt="' + esc(doc.infobox.title || "") + '">';
+        return;
+      }
+      h += '<div class="infobox-row"><div class="infobox-k">' + esc(r[0]) + '</div><div class="infobox-v">' + inline(r[1]) + "</div></div>";
+    });
+    h += "</div>";
+  }
+  if (!note.text.trim()) h += '<div class="empty">This note is blank. Tap the pencil to start writing, or link to it from another note.</div>';
+  h += blocksHtml(doc.lead);
+
+  if (doc.sections.length > 1) {
+    h += '<nav class="toc"><div class="toc-t">Contents</div><ol>';
+    doc.sections.forEach((s, i) => {
+      h += '<li><span class="toc-n">' + (i + 1) + '</span><a data-jump="' + i + '">' + inline(s.title) + "</a></li>";
+    });
+    h += "</ol></nav>";
+  }
+  doc.sections.forEach((s, i) => {
+    h += '<section id="sec-' + i + '">';
+    h += '<button class="sec-h" data-sec="' + i + '" aria-expanded="' + isOpen(i) + '"><h2>' + inline(s.title) +
+      '</h2><span class="chev' + (isOpen(i) ? " open" : "") + '">▼</span></button>';
+    if (isOpen(i)) h += blocksHtml(s.blocks);
+    h += "</section>";
+  });
+  if (doc.refs.length) {
+    h += '<section><div class="sec-h" style="cursor:default"><h2>References</h2></div><ol class="refs">';
+    doc.refs.forEach((r) => { h += "<li>" + inline(r) + "</li>"; });
+    h += "</ol></section>";
+  }
+  if (doc.categories.length) {
+    h += '<div class="cats"><b>Categories:</b>';
+    doc.categories.forEach((c) => { h += '<span class="cat"><a data-cat="' + esc(c) + '">' + esc(c) + "</a></span>"; });
+    h += "</div>";
+  }
+  if (!isPreview) {
+    const bl = backlinksOf(note.title);
+    if (bl.length) {
+      h += '<div class="linkshere"><b>What links here:</b> ' +
+        bl.map((b) => '<a data-go="' + esc(b.title) + '">' + esc(b.title) + "</a>").join(", ") + "</div>";
+    }
+    const revs = (note.revisions || []).length;
+    h += '<div class="pagefoot">Last edited on ' + fmtDate(note.updated) + " at " + fmtTime(note.updated) +
+      ". " + revs + " revision" + (revs === 1 ? "" : "s") + ".</div>";
+  }
+  return h;
+}
+
+function mainHtml() {
+  const list = notesList().sort((a, b) => b.updated - a.updated);
+  const words = list.reduce((n, x) => n + plainText(x.text).split(/\s+/).filter(Boolean).length, 0);
+  let h = '<div class="welcome"><h2>Welcome to Notepedia</h2><p>' + list.length + " note" + (list.length === 1 ? "" : "s") +
+    " · " + words.toLocaleString() + " words · written entirely by you</p></div>";
+  if (list[0]) {
+    const p = plainText(list[0].text);
+    h += '<div class="box"><div class="box-h">From your latest note</div><div class="box-b"><p style="margin:0">' +
+      '<a data-go="' + esc(list[0].title) + '"><b>' + esc(list[0].title) + "</b></a> — " +
+      esc(p.slice(0, 180) || "No text yet.") + (p.length > 180 ? "…" : "") + "</p></div></div>";
+  }
+  h += '<div class="box"><div class="box-h">Recent changes</div><div>';
+  if (!list.length) h += '<div class="box-b empty">Nothing written yet.</div>';
+  list.slice(0, 6).forEach((n) => {
+    const sum = (n.revisions && n.revisions[0] && n.revisions[0].summary) || "No summary given";
+    h += '<button class="feed" data-go="' + esc(n.title) + '"><span class="feed-t">' + esc(n.title) +
+      '</span><span class="feed-m"> · ' + fmtDate(n.updated) + " · " + esc(sum) + "</span></button>";
+  });
+  h += "</div></div>";
+  h += '<div class="box"><div class="box-h">Getting started</div><div class="box-b"><p style="margin:0">' +
+    (list.length > 2
+      ? 'Jump to <a data-random="1">a random note</a>, or read <a data-go="Notepedia:How to write notes">how to write notes</a>.'
+      : 'Tap the pencil to write your first note. Link to notes that don\'t exist yet and they turn red — tapping one starts it. ' +
+        '<a data-go="Notepedia:How to write notes">How to write notes</a> covers the rest.') +
+    "</p></div></div>";
+  return h;
+}
+
+function indexHtml() {
+  const list = notesList().sort((a, b) => a.title.localeCompare(b.title));
+  let h = '<h1 class="title">All notes</h1><div class="subtitle">' + list.length + " note" + (list.length === 1 ? "" : "s") + ", alphabetical</div>";
+  if (!list.length) return h + '<div class="empty">No notes yet. Tap the pencil to write the first one.</div>';
+  let letter = "";
+  list.forEach((n) => {
+    const L = (n.title[0] || "#").toUpperCase();
+    if (L !== letter) { letter = L; h += '<div class="letter">' + esc(L) + "</div>"; }
+    h += '<button class="indexrow" data-go="' + esc(n.title) + '"><span style="color:var(--link)">' + esc(n.title) +
+      '</span><span class="m"> · edited ' + fmtDate(n.updated) + "</span></button>";
+  });
+  return h;
+}
+
+function categoriesHtml() {
+  const map = categoryMap();
+  const names = Object.keys(map).sort();
+  let h = '<h1 class="title">Categories</h1><div class="subtitle">Add one to a note with [[Category:Name]]</div>';
+  if (!names.length) return h + '<div class="empty">No categories yet.</div>';
+  names.forEach((c) => {
+    h += '<button class="indexrow" data-cat="' + esc(c) + '"><span style="color:var(--link)">' + esc(c) +
+      '</span><span class="m"> · ' + map[c].length + " notes</span></button>";
+  });
+  return h;
+}
+
+function categoryHtml(cat) {
+  const list = categoryMap()[cat] || [];
+  let h = '<h1 class="title">Category: ' + esc(cat) + '</h1><div class="subtitle">' + list.length +
+    " note" + (list.length === 1 ? "" : "s") + " in this category</div>";
+  list.forEach((n) => {
+    h += '<button class="indexrow" data-go="' + esc(n.title) + '"><span style="color:var(--link)">' + esc(n.title) +
+      '</span><span class="m"> · edited ' + fmtDate(n.updated) + "</span></button>";
+  });
+  return h;
+}
+
+function editorHtml(note) {
+  const draft = state.draftCache !== null ? state.draftCache : note.text;
+  let h = '<h1 class="title">Editing ' + esc(note.title) + '</h1>' +
+    '<div class="subtitle">Wiki marks work here — see How to write notes</div>';
+  if (state.preview) {
+    h += '<div class="preview"><div class="preview-l">Preview — not saved yet</div>' +
+      articleHtml({ title: note.title, text: draft, updated: note.updated, revisions: note.revisions }, true) + "</div>";
+  }
+  const tools = [
+    ["Bold", "'''", "'''", false, "<b>B</b>"],
+    ["Italic", "''", "''", false, "<i>I</i>"],
+    ["Link to a note", "[[", "]]", false, "[[ ]]"],
+    ["Section heading", "\n== ", " ==\n", true, "H2"],
+    ["Subheading", "\n=== ", " ===\n", true, "H3"],
+    ["Bullet", "\n* ", "", true, "•"],
+    ["Numbered", "\n# ", "", true, "1."],
+    ["Term and meaning", "\n; ", " : ", true, ";"],
+    ["Footnote", "<ref>", "</ref>", false, "ref"],
+    ["Category", "\n[[Category:", "]]", true, "cat"]
+  ];
+  h += '<div class="toolbar">';
+  tools.forEach((t, i) => { h += '<button class="tool" data-tool="' + i + '" title="' + esc(t[0]) + '">' + t[4] + "</button>"; });
+  h += '<button class="tool" data-act="image" title="Insert a picture">🖼</button>';
+  h += "</div>";
+  h += '<textarea class="textarea" id="draft" spellcheck="true" placeholder="Start with a sentence that says what this note is. Link other notes with [[double brackets]].">' + esc(draft) + "</textarea>";
+  h += '<input class="summary" id="summary" placeholder="Summarize what you changed">';
+  h += '<div class="editnote">Saving records a revision you can read or restore later from History.</div>';
+  h += '<div class="actions"><button class="btn" data-act="save">Save changes</button>' +
+    '<button class="btn quiet" data-act="preview">' + (state.preview ? "Hide preview" : "Show preview") + "</button>" +
+    '<button class="btn quiet" data-act="cancel">Cancel</button>' +
+    '<button class="btn danger" data-act="delete">Delete note</button></div>';
+  window.__tools = tools;
+  return h;
+}
+
+function historyHtml(note) {
+  const revs = note.revisions || [];
+  let h = '<h1 class="title">History of ' + esc(note.title) + '</h1>' +
+    '<div class="subtitle">Newest first. Restoring loads that text into the editor.</div>';
+  revs.forEach((r, i) => {
+    const prevSize = revs[i + 1] ? revs[i + 1].size : 0;
+    const d = r.size - prevSize;
+    h += '<div class="rev"><div style="flex:1"><div class="d">' + fmtDate(r.ts) + " at " + fmtTime(r.ts) +
+      (i === 0 ? ' <span class="cur">current</span>' : "") + '</div><div class="s">' + esc(r.summary) + "</div></div>" +
+      '<span class="delta ' + (d > 0 ? "pos" : d < 0 ? "neg" : "zero") + '">' + (d > 0 ? "+" : "") + d + "</span>" +
+      (r.text !== undefined ? '<a data-restore="' + i + '">restore</a>' : "") + "</div>";
+  });
+  return h;
+}
+
+function searchHtml() {
+  const q = state.query.trim().toLowerCase();
+  let h = '<h1 class="title">Search</h1><div class="subtitle">Titles and note text</div>';
+  if (!q) return h + '<div class="empty">Type to search your notes.</div>';
+  const results = notesList().map((n) => {
+    const body = plainText(n.text);
+    const inTitle = n.title.toLowerCase().indexOf(q);
+    const inBody = body.toLowerCase().indexOf(q);
+    if (inTitle === -1 && inBody === -1) return null;
+    const at = inBody === -1 ? 0 : Math.max(0, inBody - 34);
+    return {
+      title: n.title,
+      score: (inTitle === -1 ? 99 : inTitle) * 10 + (inBody === -1 ? 99 : 1),
+      snippet: (at ? "…" : "") + body.slice(at, at + 110) + (body.length > at + 110 ? "…" : "")
+    };
+  }).filter(Boolean).sort((a, b) => a.score - b.score).slice(0, 15);
+
+  if (!results.length) {
+    return h + '<div class="empty">No note matches “' + esc(state.query.trim()) + '”. <a data-create="' + esc(state.query.trim()) + '">Write it</a>.</div>';
+  }
+  results.forEach((r) => {
+    h += '<button class="result" data-go="' + esc(r.title) + '"><div class="result-t">' + esc(r.title) +
+      '</div><div class="result-s">' + esc(r.snippet) + "</div></button>";
+  });
+  return h;
+}
+
+function mediaHtml() {
+  let h = '<h1 class="title">Images</h1><div class="subtitle">' + imgIndex.length + " image" +
+    (imgIndex.length === 1 ? "" : "s") + " stored on this device</div>";
+  if (!imgIndex.length) {
+    return h + '<div class="empty">No pictures yet. Open any note, tap the pencil, then the picture button in the toolbar.</div>';
+  }
+  const total = imgIndex.reduce((n, r) => n + r.size, 0);
+  h += '<p class="imgmeta">Using <b>' + fmtBytes(total) + "</b> altogether. Tap one for details.</p>";
+  h += '<div class="gallery">';
+  imgIndex.forEach((r) => {
+    h += '<button class="gtile" data-imginfo="' + esc(r.id) + '"><img data-img="' + esc(r.id) +
+      '" alt=""><span class="n">' + esc(r.name || r.id) + "</span></button>";
+  });
+  h += "</div>";
+  return h;
+}
+
+function settingsHtml() {
+  const list = notesList();
+  const words = list.reduce((n, x) => n + plainText(x.text).split(/\s+/).filter(Boolean).length, 0);
+  const totalImg = imgIndex.reduce((n, r) => n + r.size, 0);
+  return '<h1 class="title">Your notebook</h1><div class="subtitle">Everything here stays on this device</div>' +
+    '<div class="setting"><b>' + list.length + " notes, " + words.toLocaleString() + " words, " +
+    imgIndex.length + " image" + (imgIndex.length === 1 ? "" : "s") + " (" + fmtBytes(totalImg) + ")</b>" +
+    "<span>Stored in this browser" + (memoryOnly ? ", but storage is currently blocked — export before closing" : "") +
+    '. Nothing is uploaded anywhere. <span id="usage">Checking space…</span></span></div>' +
+    '<div class="setting"><b>Keep this data safe from cleanup</b><span>Asks Android not to evict your notes when storage runs low. Worth doing once.</span>' +
+    '<div class="actions"><button class="btn quiet" data-act="persist">Ask to keep my notes</button></div></div>' +
+    '<div class="setting"><b>Export</b><span>Notes only is small and quick. Everything also packs in the pictures, so the file gets large but nothing is left behind.</span>' +
+    '<div class="actions"><button class="btn" data-act="export">Export notes</button>' +
+    '<button class="btn quiet" data-act="exportAll">Export everything</button></div></div>' +
+    '<div class="setting"><b>Import notes</b><span>Adds notes from an exported file. Notes with the same title are replaced by the imported version.</span>' +
+    '<div class="actions"><button class="btn quiet" data-act="import">Choose a file</button></div></div>' +
+    '<div class="setting"><b>Start over</b><span>Deletes every note and picture on this device. Export first.</span>' +
+    '<div class="actions"><button class="btn danger" data-act="wipe">Delete everything</button></div></div>';
+}
+
+/* ============================ render ============================ */
+function render() {
+  const app = document.getElementById("app");
+  const note = state.view.name === "note" ? state.notes[state.view.k] : null;
+  let html;
+
+  if (state.searching) html = searchHtml();
+  else if (state.view.name === "main") html = mainHtml();
+  else if (state.view.name === "index") html = indexHtml();
+  else if (state.view.name === "categories") html = categoriesHtml();
+  else if (state.view.name === "category") html = categoryHtml(state.view.cat);
+  else if (state.view.name === "settings") html = settingsHtml();
+  else if (state.view.name === "media") html = mediaHtml();
+  else if (note) {
+    if (state.tab === "edit") html = editorHtml(note);
+    else if (state.tab === "history") html = historyHtml(note);
+    else html = articleHtml(note, false);
+  } else html = mainHtml();
+
+  app.innerHTML = html;
+
+  document.querySelectorAll(".tab").forEach((t) => {
+    const name = t.dataset.tab;
+    t.disabled = !note && name !== "read";
+    t.classList.toggle("on", note ? state.tab === name : name === "read");
+  });
+  const fab = document.getElementById("fab");
+  const editing = note && state.tab === "read" && !state.searching;
+  fab.setAttribute("aria-label", editing ? "Edit this note" : "New note");
+  fab.style.display = state.tab === "edit" ? "none" : "grid";
+
+  document.getElementById("searchwrap").innerHTML = state.searching
+    ? '<div class="searchwrap"><input class="search" id="q" placeholder="Search Notepedia" aria-label="Search notes" value="' + esc(state.query) + '"></div>'
+    : "";
+  if (state.searching) {
+    const q = document.getElementById("q");
+    q.addEventListener("input", () => { state.query = q.value; document.getElementById("app").innerHTML = searchHtml(); });
+    if (document.activeElement !== q) q.focus();
+  }
+  if (state.tab === "edit" && note) {
+    const ta = document.getElementById("draft");
+    ta.addEventListener("input", () => { state.draftCache = ta.value; });
+  }
+  hydrateImages();
+  if (state.view.name === "settings") showUsage();
+}
+
+function showUsage() {
+  const el = document.getElementById("usage");
+  if (!el) return;
+  if (!navigator.storage || !navigator.storage.estimate) { el.textContent = ""; return; }
+  navigator.storage.estimate().then((e) => {
+    if (!e || !e.quota) { el.textContent = ""; return; }
+    el.textContent = "Using " + fmtBytes(e.usage || 0) + " of about " + fmtBytes(e.quota) + " available.";
+  }).catch(() => { el.textContent = ""; });
+}
+
+/* ============================ actions ============================ */
+function goTo(title) {
+  const k = keyOf(title);
+  if (!state.notes[k]) { openCreate(title); return; }
+  state.view = { name: "note", k: k };
+  state.tab = "read";
+  state.searching = false;
+  state.query = "";
+  state.preview = false;
+  state.draftCache = null;
+  closeOverlay();
+  render();
+  window.scrollTo(0, 0);
+}
+
+function startEdit() {
+  if (state.view.name !== "note") return;
+  state.draftCache = state.notes[state.view.k].text;
+  state.preview = false;
+  state.tab = "edit";
+  render();
+  window.scrollTo(0, 0);
+}
+
+function saveNote() {
+  const k = state.view.k;
+  const prev = state.notes[k];
+  const ta = document.getElementById("draft");
+  const draft = ta ? ta.value : state.draftCache || "";
+  const summaryEl = document.getElementById("summary");
+  const summary = summaryEl && summaryEl.value.trim() ? summaryEl.value.trim() : "No summary given";
+  const now = Date.now();
+  prev.text = draft;
+  prev.updated = now;
+  prev.revisions = [{ ts: now, size: draft.length, summary: summary, text: draft }].concat(prev.revisions || []).slice(0, 40);
+  save();
+  state.tab = "read";
+  state.preview = false;
+  state.draftCache = null;
+  render();
+  window.scrollTo(0, 0);
+}
+
+function createNote(title) {
+  const t = String(title || "").trim();
+  if (!t) return;
+  const k = keyOf(t);
+  const now = Date.now();
+  if (!state.notes[k]) {
+    state.notes[k] = { title: t, text: "", created: now, updated: now, revisions: [{ ts: now, size: 0, summary: "Note started", text: "" }] };
+    save();
+  }
+  closeOverlay();
+  state.view = { name: "note", k: k };
+  state.searching = false;
+  state.query = "";
+  state.draftCache = state.notes[k].text;
+  state.preview = false;
+  state.tab = "edit";
+  render();
+  window.scrollTo(0, 0);
+}
+
+function deleteNote() {
+  const n = state.notes[state.view.k];
+  if (!confirm('Delete "' + n.title + '"? Its history goes with it.')) return;
+  delete state.notes[state.view.k];
+  save();
+  state.view = { name: "index" };
+  state.tab = "read";
+  state.draftCache = null;
+  render();
+}
+
+function applyTool(i) {
+  const t = window.__tools[i];
+  const ta = document.getElementById("draft");
+  if (!ta) return;
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  const sel = ta.value.slice(s, e), pre = ta.value.slice(0, s), post = ta.value.slice(e);
+  const lead = t[3] && pre && !pre.endsWith("\n") ? "\n" : "";
+  ta.value = pre + lead + t[1] + sel + t[2] + post;
+  state.draftCache = ta.value;
+  const caret = pre.length + lead.length + t[1].length + sel.length;
+  ta.focus();
+  ta.setSelectionRange(caret, caret);
+}
+
+function insertIntoDraft(text, caretBack) {
+  const ta = document.getElementById("draft");
+  if (!ta) return;
+  const pos = (state.insertAt === null || state.insertAt === undefined) ? ta.value.length : state.insertAt;
+  const pre = ta.value.slice(0, pos), post = ta.value.slice(pos);
+  const lead = pre && !pre.endsWith("\n") ? "\n" : "";
+  ta.value = pre + lead + text + "\n" + post;
+  state.draftCache = ta.value;
+  const caret = pre.length + lead.length + text.length - (caretBack || 0);
+  state.insertAt = caret;
+  ta.focus();
+  ta.setSelectionRange(caret, caret);
+}
+
+function addImages(files) {
+  const arr = Array.prototype.slice.call(files || []);
+  if (!arr.length) return;
+  let chain = Promise.resolve();
+  arr.forEach((f) => { chain = chain.then(() => addImage(f)); });
+  chain.then(refreshImgIndex).then(() => {
+    if (state.view.name === "media") render();
+  });
+}
+
+function addImage(file) {
+  if (!file || file.type.indexOf("image/") !== 0) { toast("That isn't an image"); return Promise.resolve(); }
+  return shrink(file).then((out) => {
+    const id = slug(file.name) + "-" + Math.random().toString(36).slice(2, 6);
+    return out.blob.arrayBuffer().then((bytes) => imgPut({
+      id: id, name: file.name, type: out.blob.type, w: out.w, h: out.h,
+      bytes: bytes, size: out.blob.size, added: Date.now()
+    }))
+      .then(() => {
+        insertIntoDraft("[[File:" + id + "|thumb|]]", 2);
+        toast("Added — type a caption where the cursor is");
+      });
+  }).catch(() => toast("Couldn't add that image"));
+}
+
+function openImageModal() {
+  const ta = document.getElementById("draft");
+  state.insertAt = ta ? ta.selectionStart : null;
+  let gallery = "";
+  if (imgIndex.length) {
+    gallery = '<p style="margin:14px 0 2px">Or reuse one you already added:</p><div class="gallery">' +
+      imgIndex.slice(0, 24).map((r) => '<button class="gtile" data-insertimg="' + esc(r.id) +
+        '"><img data-img="' + esc(r.id) + '" alt=""><span class="n">' + esc(r.name || r.id) + "</span></button>").join("") +
+      "</div>";
+  }
+  document.getElementById("overlay").innerHTML =
+    '<div class="scrim" data-close="1"></div><div class="modal"><h3>Add a picture</h3>' +
+    "<p>Large photos are shrunk to fit before they're stored, so a full-size camera shot won't fill up your phone.</p>" +
+    '<div class="actions"><button class="btn" data-act="pickImage">Choose photo</button>' +
+    '<button class="btn quiet" data-act="takePhoto">Take photo</button>' +
+    '<button class="btn quiet" data-close="1">Cancel</button></div>' + gallery + "</div>";
+  hydrateImages();
+}
+
+function openImageInfo(id) {
+  const rec = imgIndex.filter((r) => r.id === id)[0];
+  if (!rec) return;
+  const used = notesUsing(id);
+  document.getElementById("overlay").innerHTML =
+    '<div class="scrim" data-close="1"></div><div class="modal"><h3>' + esc(rec.name || rec.id) + "</h3>" +
+    '<img data-img="' + esc(id) + '" alt="" style="width:100%;height:auto;border:1px solid var(--rule)">' +
+    '<p class="imgmeta">' + rec.w + " × " + rec.h + " · " + fmtBytes(rec.size) + " · added " + fmtDate(rec.added) + "</p>" +
+    '<p class="imgmeta">' + (used.length
+      ? "Used in " + used.map((n) => '<a data-go="' + esc(n.title) + '">' + esc(n.title) + "</a>").join(", ")
+      : "Not used in any note yet.") + "</p>" +
+    '<p class="imgmeta">Paste this into a note:<br><code>[[File:' + esc(id) + "|thumb|caption]]</code></p>" +
+    '<div class="actions"><button class="btn quiet" data-copyimg="' + esc(id) + '">Copy that line</button>' +
+    '<button class="btn danger" data-delimg="' + esc(id) + '">Delete image</button>' +
+    '<button class="btn quiet" data-close="1">Close</button></div></div>';
+  hydrateImages();
+}
+
+function deleteImage(id) {
+  const used = notesUsing(id);
+  const warn = used.length
+    ? "This picture is used in " + used.length + " note" + (used.length === 1 ? "" : "s") + ". Deleting it leaves a gap there. Continue?"
+    : "Delete this picture?";
+  if (!confirm(warn)) return;
+  imgDel(id).then(refreshImgIndex).then(() => {
+    if (urlCache.has(id)) { URL.revokeObjectURL(urlCache.get(id)); urlCache.delete(id); }
+    closeOverlay();
+    render();
+    toast("Image deleted");
+  }).catch(() => toast("Couldn't delete that"));
+}
+
+function openLightbox(src, caption) {
+  document.getElementById("overlay").innerHTML =
+    '<div class="lightbox" data-close="1"><button class="lclose" data-close="1" aria-label="Close">×</button>' +
+    '<img src="' + esc(src) + '" alt="">' +
+    (caption ? '<div class="lcap">' + esc(caption) + "</div>" : "") + "</div>";
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+function exportNotes() {
+  const data = JSON.stringify({ app: "notepedia", version: 1, exported: new Date().toISOString(), notes: state.notes }, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "notepedia-" + new Date().toISOString().slice(0, 10) + ".json";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  toast("Exported " + Object.keys(state.notes).length + " notes");
+}
+
+function exportEverything() {
+  toast("Packing images…");
+  imgAll().then((records) => {
+    return Promise.all((records || []).map((r) =>
+      blobToDataUrl(recBlob(r)).then((data) => ({ id: r.id, name: r.name, type: r.type, w: r.w, h: r.h, added: r.added, data: data }))
+    ));
+  }).then((images) => {
+    const payload = JSON.stringify({ app: "notepedia", version: 2, exported: new Date().toISOString(), notes: state.notes, images: images });
+    const blob = new Blob([payload], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "notepedia-full-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast("Exported " + images.length + " images and " + Object.keys(state.notes).length + " notes (" + fmtBytes(blob.size) + ")");
+  }).catch(() => toast("Couldn't build the export"));
+}
+
+function importNotes(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      const incoming = data.notes || data;
+      let n = 0;
+      Object.keys(incoming).forEach((k) => {
+        const note = incoming[k];
+        if (!note || !note.title) return;
+        state.notes[keyOf(note.title)] = {
+          title: note.title,
+          text: note.text || "",
+          created: note.created || Date.now(),
+          updated: note.updated || Date.now(),
+          revisions: note.revisions || [{ ts: Date.now(), size: (note.text || "").length, summary: "Imported", text: note.text || "" }]
+        };
+        n++;
+      });
+      save();
+      const images = data.images || [];
+      if (!images.length) { render(); toast("Imported " + n + " notes"); return; }
+      Promise.all(images.map((im) =>
+        fetch(im.data).then((r) => r.arrayBuffer()).then((bytes) =>
+          imgPut({ id: im.id, name: im.name, type: im.type, w: im.w, h: im.h,
+                   bytes: bytes, size: bytes.byteLength, added: im.added || Date.now() }))
+      )).then(refreshImgIndex).then(() => {
+        render();
+        toast("Imported " + n + " notes and " + images.length + " images");
+      }).catch(() => { render(); toast("Imported " + n + " notes, but the images failed"); });
+    } catch (err) {
+      toast("That file isn't a Notepedia export");
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ============================ overlays ============================ */
+function closeOverlay() { document.getElementById("overlay").innerHTML = ""; }
+
+function openDrawer() {
+  const list = notesList();
+  document.getElementById("overlay").innerHTML =
+    '<div class="scrim" data-close="1"></div><aside class="drawer">' +
+    '<div class="drawer-h">Notepedia</div>' +
+    '<button class="nav" data-nav="main">Main page</button>' +
+    '<button class="nav" data-nav="index">All notes<span class="g">' + list.length + " written</span></button>" +
+    '<button class="nav" data-nav="categories">Categories</button>' +
+    '<button class="nav" data-nav="media">Images<span class="g">' + imgIndex.length + " stored</span></button>" +
+    '<button class="nav" data-random="1">Random note</button>' +
+    '<button class="nav" data-create="">New note</button>' +
+    '<button class="nav" data-go="Notepedia:How to write notes">How to write notes</button>' +
+    '<button class="nav" data-nav="settings">Your notebook<span class="g">export, import, storage</span></button>' +
+    (deferredPrompt ? '<button class="nav" data-act="install">Add to home screen</button>' : "") +
+    '<div class="drawer-f">Notes live on this device only. Export now and then.</div></aside>';
+}
+
+function openCreate(prefill) {
+  document.getElementById("overlay").innerHTML =
+    '<div class="scrim" data-close="1"></div><div class="modal"><h3>Write a new note</h3>' +
+    "<p>Give it the name you'd use to link to it later.</p>" +
+    '<input id="newTitle" placeholder="Note title" aria-label="Note title" value="' + esc(prefill || "") + '">' +
+    '<div class="actions"><button class="btn" data-act="confirmCreate">Create note</button>' +
+    '<button class="btn quiet" data-close="1">Cancel</button></div></div>';
+  const input = document.getElementById("newTitle");
+  input.focus();
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") createNote(input.value); });
+}
+
+/* ============================ events ============================ */
+document.addEventListener("click", (e) => {
+  const zoom = e.target.closest(".thumb img, img.ibimg");
+  if (zoom && zoom.src) {
+    const wrap = zoom.closest(".thumb");
+    const cap = wrap ? wrap.querySelector(".cap") : null;
+    openLightbox(zoom.src, cap ? cap.textContent : "");
+    return;
+  }
+  const el = e.target.closest("[data-go],[data-cat],[data-sec],[data-jump],[data-nav],[data-act],[data-tool],[data-restore],[data-random],[data-create],[data-close],[data-tab],[data-insertimg],[data-imginfo],[data-delimg],[data-copyimg]");
+  if (!el) return;
+  const d = el.dataset;
+
+  if (d.close !== undefined) { closeOverlay(); return; }
+  if (d.insertimg !== undefined) {
+    insertIntoDraft("[[File:" + d.insertimg + "|thumb|]]", 2);
+    closeOverlay();
+    toast("Added — type a caption where the cursor is");
+    return;
+  }
+  if (d.imginfo !== undefined) { openImageInfo(d.imginfo); return; }
+  if (d.delimg !== undefined) { deleteImage(d.delimg); return; }
+  if (d.copyimg !== undefined) {
+    const line = "[[File:" + d.copyimg + "|thumb|caption]]";
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(line).then(() => toast("Copied")).catch(() => toast("Couldn't copy"));
+    } else toast("Copying isn't available here");
+    return;
+  }
+  if (d.go !== undefined) { goTo(d.go); return; }
+  if (d.cat !== undefined) { state.view = { name: "category", cat: d.cat }; state.searching = false; closeOverlay(); render(); window.scrollTo(0, 0); return; }
+  if (d.create !== undefined) { closeOverlay(); openCreate(d.create); return; }
+  if (d.random !== undefined) {
+    const list = notesList();
+    if (list.length) goTo(list[Math.floor(Math.random() * list.length)].title);
+    return;
+  }
+  if (d.nav !== undefined) {
+    state.view = { name: d.nav };
+    state.tab = "read";
+    state.searching = false;
+    closeOverlay();
+    render();
+    window.scrollTo(0, 0);
+    return;
+  }
+  if (d.tab !== undefined) {
+    if (el.disabled) return;
+    if (d.tab === "edit") startEdit();
+    else { state.tab = d.tab; state.preview = false; state.searching = false; render(); window.scrollTo(0, 0); }
+    return;
+  }
+  if (d.sec !== undefined) {
+    const nk = keyOf(state.notes[state.view.k].title);
+    const key = nk + ":" + d.sec;
+    state.open[key] = state.open[key] === false;
+    render();
+    const target = document.getElementById("sec-" + d.sec);
+    if (target) target.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (d.jump !== undefined) {
+    const nk = keyOf(state.notes[state.view.k].title);
+    state.open[nk + ":" + d.jump] = true;
+    render();
+    const target = document.getElementById("sec-" + d.jump);
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  if (d.tool !== undefined) { applyTool(Number(d.tool)); return; }
+  if (d.restore !== undefined) {
+    const rev = state.notes[state.view.k].revisions[Number(d.restore)];
+    state.draftCache = rev.text;
+    state.tab = "edit";
+    state.preview = false;
+    render();
+    const s = document.getElementById("summary");
+    if (s) s.value = "Restored version from " + fmtDate(rev.ts);
+    window.scrollTo(0, 0);
+    return;
+  }
+  if (d.act !== undefined) {
+    if (d.act === "save") saveNote();
+    else if (d.act === "confirmCreate") {
+      const input = document.getElementById("newTitle");
+      createNote(input ? input.value : "");
+    }
+    else if (d.act === "cancel") { state.tab = "read"; state.preview = false; state.draftCache = null; render(); window.scrollTo(0, 0); }
+    else if (d.act === "preview") { state.draftCache = document.getElementById("draft").value; state.preview = !state.preview; render(); }
+    else if (d.act === "delete") deleteNote();
+    else if (d.act === "export") exportNotes();
+    else if (d.act === "exportAll") exportEverything();
+    else if (d.act === "image") openImageModal();
+    else if (d.act === "pickImage") document.getElementById("pickImage").click();
+    else if (d.act === "takePhoto") document.getElementById("takePhoto").click();
+    else if (d.act === "persist") {
+      if (navigator.storage && navigator.storage.persist) {
+        navigator.storage.persist().then((granted) => {
+          toast(granted ? "Android will keep your notes" : "Android declined for now — keep exporting");
+        }).catch(() => toast("Couldn't ask for that here"));
+      } else toast("This browser doesn't offer that");
+    }
+    else if (d.act === "import") document.getElementById("importFile").click();
+    else if (d.act === "wipe") {
+      if (confirm("Delete every note and picture on this device? This can't be undone.")) {
+        state.notes = {};
+        save();
+        Promise.all(imgIndex.map((r) => imgDel(r.id))).then(refreshImgIndex).then(() => {
+          urlCache.forEach((u) => URL.revokeObjectURL(u));
+          urlCache.clear();
+          state.view = { name: "main" };
+          render();
+        });
+      }
+    } else if (d.act === "install" && deferredPrompt) {
+      closeOverlay();
+      deferredPrompt.prompt();
+      deferredPrompt = null;
+    }
+    return;
+  }
+});
+
+document.getElementById("menuBtn").addEventListener("click", openDrawer);
+document.getElementById("homeBtn").addEventListener("click", () => {
+  state.view = { name: "main" }; state.tab = "read"; state.searching = false; render(); window.scrollTo(0, 0);
+});
+document.getElementById("searchBtn").addEventListener("click", () => {
+  state.searching = !state.searching;
+  if (!state.searching) state.query = "";
+  render();
+});
+document.getElementById("fab").addEventListener("click", () => {
+  if (state.view.name === "note" && state.tab === "read" && !state.searching) startEdit();
+  else openCreate("");
+});
+document.getElementById("pickImage").addEventListener("change", (e) => {
+  closeOverlay();
+  addImages(e.target.files);
+  e.target.value = "";
+});
+document.getElementById("takePhoto").addEventListener("change", (e) => {
+  closeOverlay();
+  addImages(e.target.files);
+  e.target.value = "";
+});
+document.getElementById("importFile").addEventListener("change", (e) => {
+  if (e.target.files[0]) importNotes(e.target.files[0]);
+  e.target.value = "";
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeOverlay(); });
+
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredPrompt = e; });
+
+/* ============================ boot ============================ */
+// Adds the pictures section to the help note for notebooks made before images existed.
+function migrateHelpNote() {
+  const k = keyOf("Notepedia:How to write notes");
+  const n = state.notes[k];
+  if (!n || n.text.indexOf("== Pictures ==") !== -1 || n.text.indexOf("== Keeping your notes ==") === -1) return;
+  const section = "== Pictures ==\nTap the picture button in the editor toolbar to add a photo from your gallery or the camera. It goes in as:\n\n[[File:some-photo-a1b2|thumb|Your caption here]]\n\nAdd ''full'' as an extra part to stop it sitting beside the text on a wide screen. Tap any picture to see it full size. The Images page in the menu lists everything you've added.\n\n";
+  n.text = n.text.replace("== Keeping your notes ==", section + "== Keeping your notes ==");
+  n.updated = Date.now();
+  n.revisions = [{ ts: n.updated, size: n.text.length, summary: "Added the pictures section", text: n.text }].concat(n.revisions || []);
+  save();
+}
+
+(function boot() {
+  const data = load();
+  if (data && data.notes && Object.keys(data.notes).length) {
+    state.notes = data.notes;
+  } else {
+    const now = Date.now();
+    SEED.forEach((s, i) => {
+      const ts = now - (SEED.length - i) * 3600000;
+      state.notes[keyOf(s.title)] = {
+        title: s.title, text: s.text, created: ts, updated: ts,
+        revisions: [{ ts: ts, size: s.text.length, summary: "Note started", text: s.text }]
+      };
+    });
+    try { localStorage.setItem(KEY, JSON.stringify({ notes: state.notes })); }
+    catch (e) { memoryOnly = true; showBanner(); }
+  }
+  migrateHelpNote();
+  render();
+  refreshImgIndex().then(() => { hydrateImages(); });
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+  }
+})();
+</script>
+</body>
+</html>
