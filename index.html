@@ -210,6 +210,8 @@ sup.ref { font-size: 10px; line-height: 1; vertical-align: super; }
 @media (min-width: 560px) {
   .thumb:not(.full) { float: right; width: 300px; margin: 2px 0 10px 16px; clear: right; }
 }
+.infobox .ibcap { font-size: 12px; line-height: 1.45; text-align: center; padding: 5px 8px; border-bottom: 1px solid var(--light); color: var(--sub); }
+.btn.choice.on { background: var(--light); border-color: var(--ink); font-weight: 700; }
 .infobox .ibimg { display: block; width: 100%; height: auto; background: var(--light); border-bottom: 1px solid var(--rule); cursor: zoom-in; }
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; margin: 10px 0 4px; }
 .gtile { border: 1px solid var(--rule); background: var(--chrome); padding: 2px; display: block; text-align: left; }
@@ -427,6 +429,21 @@ function notesUsing(id) {
 }
 
 /* ============================ seed ============================ */
+const PICTURES_DOC = `== Pictures ==
+Tap the picture button in the editor toolbar. Choose a photo or take one, and pick whether it belongs in the text or in the summary box at the top.
+
+In the text it goes in as a captioned thumbnail:
+
+[[File:some-photo-a1b2|thumb|Your caption here]]
+
+Add ''full'' — [[File:id|full|caption]] — to stop it sitting beside the text on a wide screen.
+
+In the summary box it becomes an ''image'' field. If the note has no box yet, one is started for you:
+
+{{Infobox|title=Name|image=some-photo-a1b2|caption=Under the picture|Field=Value}}
+
+Tap any picture to see it full size. The Images page in the menu lists everything you've added and what's using it.`;
+
 const SEED = [
   { title: "Notepedia:How to write notes", text: `Notepedia stores plain text with a few marks borrowed from wiki syntax. Everything below works in the editor.
 
@@ -443,12 +460,7 @@ const SEED = [
 == Linking is the point ==
 A link to a note that doesn't exist yet shows up red. Tapping it opens a blank note with that title already filled in, so you can write forward and let the notebook catch up. Every note lists what links to it at the bottom.
 
-== Pictures ==
-Tap the picture button in the editor toolbar to add a photo from your gallery or the camera. It goes in as:
-
-[[File:some-photo-a1b2|thumb|Your caption here]]
-
-Add ''full'' as an extra part — [[File:id|full|caption]] — to stop it sitting beside the text on a wide screen. Tap any picture to see it full size. The Images page in the menu lists everything you've added and what's using it.
+${PICTURES_DOC}
 
 == Keeping your notes ==
 Everything lives on this phone, in this browser. Nothing is uploaded. Open the menu and use ''Export all notes'' now and then — it writes one JSON file you can drop into a new phone with ''Import notes''.
@@ -693,11 +705,15 @@ function articleHtml(note, isPreview) {
   if (doc.infobox) {
     h += '<div class="infobox">';
     if (doc.infobox.title) h += '<div class="infobox-t">' + esc(doc.infobox.title) + "</div>";
+    const ibImage = doc.infobox.rows.filter((r) => r[0].toLowerCase() === "image")[0];
+    const ibCap = doc.infobox.rows.filter((r) => r[0].toLowerCase() === "caption")[0];
+    if (ibImage && ibImage[1].trim()) {
+      h += '<img class="ibimg" data-img="' + esc(ibImage[1].trim()) + '" alt="' + esc(doc.infobox.title || "") + '">';
+      if (ibCap && ibCap[1].trim()) h += '<div class="ibcap">' + inline(ibCap[1]) + "</div>";
+    }
     doc.infobox.rows.forEach((r) => {
-      if (r[0].toLowerCase() === "image") {
-        h += '<img class="ibimg" data-img="' + esc(r[1].trim()) + '" alt="' + esc(doc.infobox.title || "") + '">';
-        return;
-      }
+      const k = r[0].toLowerCase();
+      if (k === "image" || k === "caption") return;
       h += '<div class="infobox-row"><div class="infobox-k">' + esc(r[0]) + '</div><div class="infobox-v">' + inline(r[1]) + "</div></div>";
     });
     h += "</div>";
@@ -1080,6 +1096,58 @@ function insertIntoDraft(text, caretBack) {
   ta.setSelectionRange(caret, caret);
 }
 
+// Puts an image either inline in the text or into the note's infobox,
+// building an infobox first if the note doesn't have one.
+function placeImage(id) {
+  if (state.imgPlacement === "infobox") insertInfoboxImage(id);
+  else {
+    insertIntoDraft("[[File:" + id + "|thumb|]]", 2);
+    toast("Added — type a caption where the cursor is");
+  }
+}
+
+function insertInfoboxImage(id) {
+  const ta = document.getElementById("draft");
+  if (!ta) return;
+  const text = ta.value;
+  const m = text.match(/\{\{Infobox\s*\|([\s\S]*?)\}\}/i);
+  let caret = null;
+
+  if (m) {
+    let inner = m[1];
+    if (/(^|\|)\s*image\s*=/i.test(inner)) {
+      inner = inner.replace(/((?:^|\|)\s*image\s*=)[^|}]*/i, "$1" + id);
+      toast("Swapped the infobox picture");
+    } else {
+      const title = inner.match(/(^|\|)\s*title\s*=[^|}]*/i);
+      if (title) {
+        const at = title.index + title[0].length;
+        inner = inner.slice(0, at) + "|image=" + id + "|caption=" + inner.slice(at);
+      } else {
+        inner = "image=" + id + "|caption=|" + inner.replace(/^\|/, "");
+      }
+      toast("Added to the infobox — type a caption after caption=");
+    }
+    const rebuilt = "{{Infobox|" + inner.replace(/^\|/, "") + "}}";
+    ta.value = text.slice(0, m.index) + rebuilt + text.slice(m.index + m[0].length);
+    const capAt = ta.value.indexOf("caption=", m.index);
+    if (capAt !== -1) caret = capAt + 8;
+  } else {
+    const note = state.notes[state.view.k];
+    const box = "{{Infobox|title=" + (note ? note.title : "") + "|image=" + id + "|caption=}}\n";
+    ta.value = box + text;
+    caret = box.indexOf("caption=") + 8;
+    toast("Started an infobox with that picture at the top of the note");
+  }
+
+  state.draftCache = ta.value;
+  ta.focus();
+  if (caret !== null) {
+    state.insertAt = caret;
+    ta.setSelectionRange(caret, caret);
+  }
+}
+
 function addImages(files) {
   const arr = Array.prototype.slice.call(files || []);
   if (!arr.length) return;
@@ -1104,9 +1172,8 @@ function addImage(file) {
       bytes: bytes, size: out.blob.size, added: Date.now()
     })).catch((err) => { throw new Error(isQuotaError(err) ? "quota" : "write"); })
       .then(() => {
-        insertIntoDraft("[[File:" + id + "|thumb|]]", 2);
+        placeImage(id);
         if (out.flattened) toast("That GIF was too big to keep animated, so it went in as a still picture.");
-        else toast("Added — type a caption where the cursor is");
       });
   }).catch((err) => {
     const kind = err && err.message;
@@ -1118,9 +1185,11 @@ function addImage(file) {
   });
 }
 
-function openImageModal() {
+function openImageModal(keepPosition) {
   const ta = document.getElementById("draft");
-  state.insertAt = ta ? ta.selectionStart : null;
+  if (!keepPosition) state.insertAt = ta ? ta.selectionStart : null;
+  if (!state.imgPlacement) state.imgPlacement = "text";
+  const inBox = state.imgPlacement === "infobox";
   let gallery = "";
   if (imgIndex.length) {
     gallery = '<p style="margin:14px 0 2px">Or reuse one you already added:</p><div class="gallery">' +
@@ -1131,6 +1200,12 @@ function openImageModal() {
   document.getElementById("overlay").innerHTML =
     '<div class="scrim" data-close="1"></div><div class="modal"><h3>Add a picture</h3>' +
     "<p>Photos are shrunk to a 1600px edge before being stored, so a full-size camera shot won't fill up your phone. Files above 30 MB are turned away.</p>" +
+    '<p class="imgmeta" style="margin-bottom:6px">Where should it go?</p>' +
+    '<div class="actions"><button class="btn quiet choice' + (inBox ? "" : " on") + '" data-place="text">In the text</button>' +
+    '<button class="btn quiet choice' + (inBox ? " on" : "") + '" data-place="infobox">In the summary box</button></div>' +
+    '<p class="imgmeta" style="margin:6px 0 12px">' + (inBox
+      ? "Goes in the card at the top of the note. If there isn't one yet, it'll be made for you."
+      : "Sits in the body of the note as a captioned thumbnail.") + "</p>" +
     '<div class="actions"><button class="btn" data-act="pickImage">Choose photo</button>' +
     '<button class="btn quiet" data-act="takePhoto">Take photo</button>' +
     '<button class="btn quiet" data-close="1">Cancel</button></div>' + gallery + "</div>";
@@ -1148,8 +1223,10 @@ function openImageInfo(id) {
     '<p class="imgmeta">' + (used.length
       ? "Used in " + used.map((n) => '<a data-go="' + esc(n.title) + '">' + esc(n.title) + "</a>").join(", ")
       : "Not used in any note yet.") + "</p>" +
-    '<p class="imgmeta">Paste this into a note:<br><code>[[File:' + esc(id) + "|thumb|caption]]</code></p>" +
-    '<div class="actions"><button class="btn quiet" data-copyimg="' + esc(id) + '">Copy that line</button>' +
+    '<p class="imgmeta">In the body of a note:<br><code>[[File:' + esc(id) + "|thumb|caption]]</code>" +
+    "<br>In an infobox:<br><code>image=" + esc(id) + "</code></p>" +
+    '<div class="actions"><button class="btn quiet" data-copyimg="' + esc(id) + '">Copy thumbnail line</button>' +
+    '<button class="btn quiet" data-copyfield="' + esc(id) + '">Copy infobox line</button>' +
     '<button class="btn danger" data-delimg="' + esc(id) + '">Delete image</button>' +
     '<button class="btn quiet" data-close="1">Close</button></div></div>';
   hydrateImages();
@@ -1294,19 +1371,30 @@ document.addEventListener("click", (e) => {
     openLightbox(zoom.src, cap ? cap.textContent : "");
     return;
   }
-  const el = e.target.closest("[data-go],[data-cat],[data-sec],[data-jump],[data-nav],[data-act],[data-tool],[data-restore],[data-random],[data-create],[data-close],[data-tab],[data-insertimg],[data-imginfo],[data-delimg],[data-copyimg]");
+  const el = e.target.closest("[data-go],[data-cat],[data-sec],[data-jump],[data-nav],[data-act],[data-tool],[data-restore],[data-random],[data-create],[data-close],[data-tab],[data-insertimg],[data-imginfo],[data-delimg],[data-copyimg],[data-place]");
   if (!el) return;
   const d = el.dataset;
 
   if (d.close !== undefined) { closeOverlay(); return; }
+  if (d.place !== undefined) {
+    state.imgPlacement = d.place;
+    openImageModal(true);
+    return;
+  }
   if (d.insertimg !== undefined) {
-    insertIntoDraft("[[File:" + d.insertimg + "|thumb|]]", 2);
     closeOverlay();
-    toast("Added — type a caption where the cursor is");
+    placeImage(d.insertimg);
     return;
   }
   if (d.imginfo !== undefined) { openImageInfo(d.imginfo); return; }
   if (d.delimg !== undefined) { deleteImage(d.delimg); return; }
+  if (d.copyfield !== undefined) {
+    const field = "image=" + d.copyfield;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(field).then(() => toast("Copied")).catch(() => toast("Couldn't copy"));
+    } else toast("Copying isn't available here");
+    return;
+  }
   if (d.copyimg !== undefined) {
     const line = "[[File:" + d.copyimg + "|thumb|caption]]";
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1445,9 +1533,17 @@ window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); defe
 function migrateHelpNote() {
   const k = keyOf("Notepedia:How to write notes");
   const n = state.notes[k];
-  if (!n || n.text.indexOf("== Pictures ==") !== -1 || n.text.indexOf("== Keeping your notes ==") === -1) return;
-  const section = "== Pictures ==\nTap the picture button in the editor toolbar to add a photo from your gallery or the camera. It goes in as:\n\n[[File:some-photo-a1b2|thumb|Your caption here]]\n\nAdd ''full'' as an extra part to stop it sitting beside the text on a wide screen. Tap any picture to see it full size. The Images page in the menu lists everything you've added.\n\n";
-  n.text = n.text.replace("== Keeping your notes ==", section + "== Keeping your notes ==");
+  if (!n || n.text.indexOf("== Keeping your notes ==") === -1) return;
+  if (n.text.indexOf("== Pictures ==") !== -1) {
+    if (n.text.indexOf("image=") !== -1) return;
+    // Refresh a pictures section written before infobox images existed.
+    n.text = n.text.replace(/== Pictures ==[\s\S]*?(?=\n== )/, PICTURES_DOC + "\n");
+    n.updated = Date.now();
+    n.revisions = [{ ts: n.updated, size: n.text.length, summary: "Updated the pictures section", text: n.text }].concat(n.revisions || []);
+    save();
+    return;
+  }
+  n.text = n.text.replace("== Keeping your notes ==", PICTURES_DOC + "\n\n== Keeping your notes ==");
   n.updated = Date.now();
   n.revisions = [{ ts: n.updated, size: n.text.length, summary: "Added the pictures section", text: n.text }].concat(n.revisions || []);
   save();
