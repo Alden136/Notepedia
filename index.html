@@ -197,7 +197,7 @@ sup.ref { font-size: 10px; line-height: 1; vertical-align: super; }
 .modal input { width: 100%; padding: 9px 10px; border: 1px solid var(--rule); font-size: 16px; font-family: var(--sans); }
 
 .empty { border: 1px solid var(--rule); background: var(--chrome); padding: 18px; text-align: center; font-size: 13px; color: var(--sub); }
-.toast { position: fixed; bottom: calc(58px + env(safe-area-inset-bottom)); left: 12px; z-index: 32; background: var(--chrome); border: 1px solid var(--rule); padding: 6px 10px; font-size: 11.5px; color: var(--sub); max-width: 66vw; }
+.toast { position: fixed; bottom: calc(58px + env(safe-area-inset-bottom)); left: 12px; right: 12px; z-index: 32; background: var(--chrome); border: 1px solid var(--rule); padding: 8px 10px; font-size: 12px; line-height: 1.45; color: var(--ink); max-width: 420px; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
 .banner { background: #fef6e7; border-bottom: 1px solid #edab00; padding: 8px 12px; font-size: 12px; }
 .setting { border-bottom: 1px solid var(--light); padding: 12px 0; }
 .setting b { display: block; font-size: 14px; }
@@ -369,25 +369,57 @@ const fmtBytes = (b) => b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(0
 
 // Shrink to fit MAX_EDGE and re-encode, so a 12 MP phone photo doesn't eat the quota.
 const MAX_EDGE = 1600;
+// Refuse to even open anything past this — decoding it would cost more memory than it's worth.
+const MAX_INPUT_BYTES = 30 * 1024 * 1024;
+// Animated GIFs are stored whole to keep the animation, but only while they stay small.
+const GIF_KEEP_BYTES = 3 * 1024 * 1024;
+// A decoded pixel costs about 4 bytes, so this caps the decode at roughly 400 MB of RAM.
+const MAX_PIXELS = 100 * 1000 * 1000;
+
 function shrink(file) {
   return new Promise((res, rej) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       let w = img.naturalWidth || 1, h = img.naturalHeight || 1;
-      if (file.type === "image/gif") { URL.revokeObjectURL(url); res({ blob: file, w: w, h: h }); return; }
+      if (w * h > MAX_PIXELS) { URL.revokeObjectURL(url); rej(new Error("memory")); return; }
+      // Small animated GIFs go in untouched; large ones get flattened to a still frame.
+      if (file.type === "image/gif" && file.size <= GIF_KEEP_BYTES) {
+        URL.revokeObjectURL(url);
+        res({ blob: file, w: w, h: h, kept: true });
+        return;
+      }
+      const flattened = file.type === "image/gif";
       const scale = Math.min(1, MAX_EDGE / Math.max(w, h));
       w = Math.round(w * scale); h = Math.round(h * scale);
-      const c = document.createElement("canvas");
-      c.width = w; c.height = h;
-      c.getContext("2d").drawImage(img, 0, 0, w, h);
-      const finish = (blob) => { URL.revokeObjectURL(url); blob ? res({ blob: blob, w: w, h: h }) : rej(new Error("encode")); };
-      if (!c.toBlob) { URL.revokeObjectURL(url); rej(new Error("no toBlob")); return; }
+      let c, ctx;
+      try {
+        c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        ctx = c.getContext("2d");
+        if (!ctx) throw new Error("memory");
+        ctx.drawImage(img, 0, 0, w, h);
+      } catch (err) {
+        URL.revokeObjectURL(url);
+        rej(new Error("memory"));
+        return;
+      }
+      const finish = (blob) => {
+        URL.revokeObjectURL(url);
+        blob ? res({ blob: blob, w: w, h: h, flattened: flattened }) : rej(new Error("encode"));
+      };
+      if (!c.toBlob) { URL.revokeObjectURL(url); rej(new Error("encode")); return; }
       c.toBlob((b) => { if (b) finish(b); else c.toBlob(finish, "image/jpeg", 0.85); }, "image/webp", 0.85);
     };
     img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("decode")); };
     img.src = url;
   });
+}
+
+function isQuotaError(err) {
+  if (!err) return false;
+  const name = err.name || "";
+  return name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" || /quota|storage is full/i.test(err.message || "");
 }
 
 function notesUsing(id) {
@@ -470,7 +502,7 @@ function toast(msg) {
   }
   el.textContent = msg;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.remove(), 2600);
+  toastTimer = setTimeout(() => el.remove(), msg.length > 60 ? 5200 : 2600);
 }
 function showBanner() {
   document.getElementById("banner").innerHTML =
@@ -1060,17 +1092,30 @@ function addImages(files) {
 
 function addImage(file) {
   if (!file || file.type.indexOf("image/") !== 0) { toast("That isn't an image"); return Promise.resolve(); }
+  if (file.size > MAX_INPUT_BYTES) {
+    toast("That file is " + fmtBytes(file.size) + ", past the " + fmtBytes(MAX_INPUT_BYTES) +
+      " limit. Crop or resize it first and it'll go in fine.");
+    return Promise.resolve();
+  }
   return shrink(file).then((out) => {
     const id = slug(file.name) + "-" + Math.random().toString(36).slice(2, 6);
     return out.blob.arrayBuffer().then((bytes) => imgPut({
       id: id, name: file.name, type: out.blob.type, w: out.w, h: out.h,
       bytes: bytes, size: out.blob.size, added: Date.now()
-    }))
+    })).catch((err) => { throw new Error(isQuotaError(err) ? "quota" : "write"); })
       .then(() => {
         insertIntoDraft("[[File:" + id + "|thumb|]]", 2);
-        toast("Added — type a caption where the cursor is");
+        if (out.flattened) toast("That GIF was too big to keep animated, so it went in as a still picture.");
+        else toast("Added — type a caption where the cursor is");
       });
-  }).catch(() => toast("Couldn't add that image"));
+  }).catch((err) => {
+    const kind = err && err.message;
+    if (kind === "quota") toast("No room left. Open Images from the menu and delete a few, then try again.");
+    else if (kind === "memory") toast("That picture is too large for this phone to open. Try a smaller copy.");
+    else if (kind === "decode") toast("Couldn't read that file. It may be damaged, or a format this browser doesn't open.");
+    else if (kind === "encode") toast("This browser couldn't convert that picture.");
+    else toast("Couldn't add that image");
+  });
 }
 
 function openImageModal() {
@@ -1085,7 +1130,7 @@ function openImageModal() {
   }
   document.getElementById("overlay").innerHTML =
     '<div class="scrim" data-close="1"></div><div class="modal"><h3>Add a picture</h3>' +
-    "<p>Large photos are shrunk to fit before they're stored, so a full-size camera shot won't fill up your phone.</p>" +
+    "<p>Photos are shrunk to a 1600px edge before being stored, so a full-size camera shot won't fill up your phone. Files above 30 MB are turned away.</p>" +
     '<div class="actions"><button class="btn" data-act="pickImage">Choose photo</button>' +
     '<button class="btn quiet" data-act="takePhoto">Take photo</button>' +
     '<button class="btn quiet" data-close="1">Cancel</button></div>' + gallery + "</div>";
