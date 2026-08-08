@@ -9,19 +9,45 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>
+(function () {
+  try {
+    var pref = localStorage.getItem("notepedia-theme") || "auto";
+    var dark = pref === "dark" || (pref === "auto" && window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  } catch (e) {
+    document.documentElement.setAttribute("data-theme", "light");
+  }
+})();
+</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
 *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html { background: #fff; }
-body {
+:root {
   --paper:#ffffff; --chrome:#f8f9fa; --rule:#a2a9b1; --hair:#c8ccd1;
   --light:#eaecf0; --ink:#202122; --sub:#54595d; --link:#3366cc;
   --visited:#6b4ba1; --red:#d73333; --prog:#3366cc; --prog-dark:#2a4b8d;
+  --shade: rgba(0,0,0,.015); --preview: #fcfcfc; --pos: #14866d;
+  --warn-bg: #fef6e7; --warn-rule: #edab00; --scrim: rgba(0,0,0,.4);
   --serif: "Linux Libertine","Georgia","Times New Roman",serif;
   --sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
   --mono: ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  color-scheme: light;
+}
+/* Night palette, following Wikipedia's own dark theme rather than inverting. */
+html[data-theme="dark"] {
+  --paper:#101418; --chrome:#1c2027; --rule:#54595d; --hair:#43464a;
+  --light:#2b3038; --ink:#eaecf0; --sub:#a2a9b1; --link:#88a3e8;
+  --visited:#b195d4; --red:#fd7865; --prog:#3f6ec9; --prog-dark:#5b8ae0;
+  --shade: rgba(255,255,255,.035); --preview: #161b21; --pos: #2fbfa0;
+  --warn-bg: #3a3016; --warn-rule: #ac9012; --scrim: rgba(0,0,0,.62);
+  color-scheme: dark;
+}
+html { background: var(--paper); }
+body {
   margin: 0; font-family: var(--sans); color: var(--ink); background: var(--paper);
   font-size: 14px; line-height: 1.65; max-width: 720px; margin: 0 auto;
   min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
@@ -93,7 +119,7 @@ sup.ref { font-size: 10px; line-height: 1; vertical-align: super; }
 .infobox-t { font-family: var(--serif); font-size: 16px; text-align: center; padding: 6px 8px; background: var(--light); border-bottom: 1px solid var(--rule); }
 .infobox-row { display: flex; border-bottom: 1px solid var(--light); }
 .infobox-row:last-child { border-bottom: 0; }
-.infobox-k { flex: 0 0 38%; padding: 5px 8px; font-weight: 700; background: rgba(0,0,0,.015); }
+.infobox-k { flex: 0 0 38%; padding: 5px 8px; font-weight: 700; background: var(--shade); }
 .infobox-v { flex: 1; padding: 5px 8px; }
 
 /* ---- toc ---- */
@@ -145,14 +171,14 @@ sup.ref { font-size: 10px; line-height: 1; vertical-align: super; }
 .btn.quiet { background: var(--paper); color: var(--ink); border-color: var(--rule); font-weight: 400; }
 .btn.quiet:hover { background: var(--light); }
 .btn.danger { background: var(--paper); color: var(--red); border-color: var(--rule); font-weight: 400; }
-.preview { border: 1px dashed var(--rule); padding: 12px; margin-bottom: 14px; background: #fcfcfc; }
+.preview { border: 1px dashed var(--rule); padding: 12px; margin-bottom: 14px; background: var(--preview); }
 .preview-l { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--sub); margin-bottom: 8px; }
 
 /* ---- history ---- */
 .rev { padding: 10px 2px; border-bottom: 1px solid var(--light); display: flex; gap: 8px; align-items: baseline; }
 .rev .d { font-size: 13px; }
 .delta { font-family: var(--mono); font-size: 11.5px; }
-.delta.pos { color: #14866d; } .delta.neg { color: var(--red); } .delta.zero { color: var(--sub); }
+.delta.pos { color: var(--pos); } .delta.neg { color: var(--red); } .delta.zero { color: var(--sub); }
 .rev .s { font-size: 12px; color: var(--sub); font-style: italic; }
 .cur { font-size: 11px; background: var(--light); padding: 1px 5px; border-radius: 2px; color: var(--sub); }
 
@@ -174,7 +200,7 @@ sup.ref { font-size: 10px; line-height: 1; vertical-align: super; }
 }
 
 /* ---- drawer, modal ---- */
-.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 40; }
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 40; }
 .drawer {
   position: fixed; top: 0; left: 0; bottom: 0; width: 268px; background: var(--paper);
   z-index: 41; border-right: 1px solid var(--rule); padding: 14px 0 20px;
@@ -197,7 +223,7 @@ sup.ref { font-size: 10px; line-height: 1; vertical-align: super; }
 
 .empty { border: 1px solid var(--rule); background: var(--chrome); padding: 18px; text-align: center; font-size: 13px; color: var(--sub); }
 .toast { position: fixed; bottom: calc(58px + env(safe-area-inset-bottom)); left: 12px; right: 12px; z-index: 32; background: var(--chrome); border: 1px solid var(--rule); padding: 8px 10px; font-size: 12px; line-height: 1.45; color: var(--ink); max-width: 420px; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
-.banner { background: #fef6e7; border-bottom: 1px solid #edab00; padding: 8px 12px; font-size: 12px; }
+.banner { background: var(--warn-bg); border-bottom: 1px solid var(--warn-rule); padding: 8px 12px; font-size: 12px; }
 .setting { border-bottom: 1px solid var(--light); padding: 12px 0; }
 .setting b { display: block; font-size: 14px; }
 .setting span { font-size: 12px; color: var(--sub); }
@@ -467,6 +493,35 @@ Everything lives on this phone, in this browser. Nothing is uploaded. Open the m
 
 [[Category:Notepedia]]` }
 ];
+
+/* ============================ theme ============================ */
+const THEME_KEY = "notepedia-theme";
+
+function themePref() {
+  try { return localStorage.getItem(THEME_KEY) || "auto"; } catch (e) { return "auto"; }
+}
+function systemPrefersDark() {
+  return Boolean(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+}
+function applyTheme() {
+  const pref = themePref();
+  const dark = pref === "dark" || (pref === "auto" && systemPrefersDark());
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", dark ? "#1c2027" : "#f8f9fa");
+}
+function setTheme(pref) {
+  try { localStorage.setItem(THEME_KEY, pref); } catch (e) {}
+  applyTheme();
+  if (state.view.name === "settings") render();
+  toast(pref === "auto" ? "Following your phone's setting" : pref === "dark" ? "Dark it is" : "Back to light");
+}
+if (window.matchMedia) {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const onChange = () => { if (themePref() === "auto") applyTheme(); };
+  if (mq.addEventListener) mq.addEventListener("change", onChange);
+  else if (mq.addListener) mq.addListener(onChange);
+}
 
 /* ============================ state ============================ */
 const state = {
@@ -935,11 +990,17 @@ function settingsHtml() {
   const list = notesList();
   const words = list.reduce((n, x) => n + plainText(x.text).split(/\s+/).filter(Boolean).length, 0);
   const totalImg = imgIndex.reduce((n, r) => n + r.size, 0);
+  const pref = themePref();
   return '<h1 class="title">Your notebook</h1><div class="subtitle">Everything here stays on this device</div>' +
     '<div class="setting"><b>' + list.length + " notes, " + words.toLocaleString() + " words, " +
     imgIndex.length + " image" + (imgIndex.length === 1 ? "" : "s") + " (" + fmtBytes(totalImg) + ")</b>" +
     "<span>Stored in this browser" + (memoryOnly ? ", but storage is currently blocked — export before closing" : "") +
     '. Nothing is uploaded anywhere. <span id="usage">Checking space…</span></span></div>' +
+    '<div class="setting"><b>Appearance</b><span>Dark uses the same palette as Wikipedia at night.</span>' +
+    '<div class="actions">' +
+    ["light", "dark", "auto"].map((t) => '<button class="btn quiet choice' + (pref === t ? " on" : "") +
+      '" data-settheme="' + t + '">' + (t === "light" ? "Light" : t === "dark" ? "Dark" : "Match phone") + "</button>").join("") +
+    "</div></div>" +
     '<div class="setting"><b>Keep this data safe from cleanup</b><span>Asks Android not to evict your notes when storage runs low. Worth doing once.</span>' +
     '<div class="actions"><button class="btn quiet" data-act="persist">Ask to keep my notes</button></div></div>' +
     '<div class="setting"><b>Export</b><span>Notes only is small and quick. Everything also packs in the pictures, so the file gets large but nothing is left behind.</span>' +
@@ -1387,11 +1448,12 @@ document.addEventListener("click", (e) => {
     openLightbox(zoom.src, cap ? cap.textContent : "");
     return;
   }
-  const el = e.target.closest("[data-go],[data-cat],[data-sec],[data-jump],[data-nav],[data-act],[data-tool],[data-restore],[data-random],[data-create],[data-close],[data-tab],[data-insertimg],[data-imginfo],[data-delimg],[data-copyimg],[data-place]");
+  const el = e.target.closest("[data-go],[data-cat],[data-sec],[data-jump],[data-nav],[data-act],[data-tool],[data-restore],[data-random],[data-create],[data-close],[data-tab],[data-insertimg],[data-imginfo],[data-delimg],[data-copyimg],[data-place],[data-settheme]");
   if (!el) return;
   const d = el.dataset;
 
   if (d.close !== undefined) { closeOverlay(); return; }
+  if (d.settheme !== undefined) { setTheme(d.settheme); return; }
   if (d.place !== undefined) {
     state.imgPlacement = d.place;
     openImageModal(true);
@@ -1583,6 +1645,7 @@ function migrateHelpNote() {
     try { localStorage.setItem(KEY, JSON.stringify({ notes: state.notes })); }
     catch (e) { memoryOnly = true; showBanner(); }
   }
+  applyTheme();
   migrateHelpNote();
   render();
   refreshImgIndex().then(() => { hydrateImages(); });
