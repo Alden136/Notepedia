@@ -49,7 +49,6 @@ button { font: inherit; color: inherit; background: none; border: none; padding:
   display: grid; place-items: center; background: var(--chrome); flex: none;
 }
 .wordmark { font-family: var(--serif); font-size: 19px; letter-spacing: .2px; }
-.tagline { font-size: 10px; color: var(--sub); font-style: italic; white-space: nowrap; }
 
 /* ---- search ---- */
 .searchwrap { padding: 8px; border-bottom: 1px solid var(--light); background: var(--chrome); }
@@ -233,7 +232,7 @@ sup.ref { font-size: 10px; line-height: 1; vertical-align: super; }
   <button class="icon" id="menuBtn" aria-label="Menu">☰</button>
   <div class="mark" id="homeBtn" role="button" tabindex="0">
     <span class="globe">N</span>
-    <span><span class="wordmark">Notepedia</span> <span class="tagline">the notebook you write yourself</span></span>
+    <span class="wordmark">Notepedia</span>
   </div>
   <button class="icon" id="searchBtn" aria-label="Search">🔍</button>
 </header>
@@ -434,13 +433,13 @@ Tap the picture button in the editor toolbar. Choose a photo or take one, and pi
 
 In the text it goes in as a captioned thumbnail:
 
-[[File:some-photo-a1b2|thumb|Your caption here]]
+<nowiki>[[File:some-photo-a1b2|thumb|Your caption here]]</nowiki>
 
-Add ''full'' — [[File:id|full|caption]] — to stop it sitting beside the text on a wide screen.
+Add ''full'' — <nowiki>[[File:id|full|caption]]</nowiki> — to stop it sitting beside the text on a wide screen.
 
 In the summary box it becomes an ''image'' field. If the note has no box yet, one is started for you:
 
-{{Infobox|title=Name|image=some-photo-a1b2|caption=Under the picture|Field=Value}}
+<nowiki>{{Infobox|title=Name|image=some-photo-a1b2|caption=Under the picture|Field=Value}}</nowiki>
 
 Tap any picture to see it full size. The Images page in the menu lists everything you've added and what's using it.`;
 
@@ -451,11 +450,12 @@ const SEED = [
 ; Headings : Wrap in equals signs — == Section == and === Subsection ===
 ; Bold : Three apostrophes on each side
 ; Italic : Two apostrophes on each side
-; Links : Double brackets around a note title, or [[Title|other words]] to change the visible text
+; Links : Double brackets around a note title, or <nowiki>[[Title|other words]]</nowiki> to change the visible text
 ; Lists : Start a line with * for bullets or # for numbers
 ; Definitions : Start with a semicolon, then term, then a colon, then the meaning
 ; Footnotes : Wrap text in ref tags and it collects at the bottom
-; Categories : Put [[Category:Name]] anywhere in the note
+; Categories : Put <nowiki>[[Category:Aquarium]]</nowiki> anywhere in the note
+; Plain text : Wrap anything in nowiki tags to show the marks themselves rather than what they do
 
 == Linking is the point ==
 A link to a note that doesn't exist yet shows up red. Tapping it opens a blank note with that title already filled in, so you can write forward and let the notebook catch up. Every note lists what links to it at the bottom.
@@ -490,6 +490,7 @@ const has = (t) => Boolean(state.notes[keyOf(t)]);
 
 function plainText(t) {
   return String(t || "")
+    .replace(/<nowiki>([\s\S]*?)<\/nowiki>/gi, "$1")
     .replace(/\{\{[\s\S]*?\}\}/g, " ")
     .replace(/\[\[Category:[^\]]*\]\]/gi, " ")
     .replace(/<ref>[\s\S]*?<\/ref>/g, " ")
@@ -522,7 +523,7 @@ function showBanner() {
 }
 
 /* ============================ wikitext ============================ */
-const INLINE_SRC = "<refmark>(\\d+)</refmark>|'''([\\s\\S]+?)'''|''([\\s\\S]+?)''|\\[\\[File:([^\\]|]+?)((?:\\|[^\\]]*?)*)\\]\\]|\\[\\[([^\\]|]+?)(?:\\|([^\\]]+?))?\\]\\]|\\[(https?://[^\\s\\]]+)\\s+([^\\]]+)\\]";
+const INLINE_SRC = "\\u0001([^\\u0001]*)\\u0001|<refmark>(\\d+)</refmark>|'''([\\s\\S]+?)'''|''([\\s\\S]+?)''|\\[\\[File:([^\\]|]+?)((?:\\|[^\\]]*?)*)\\]\\]|\\[\\[([^\\]|]+?)(?:\\|([^\\]]+?))?\\]\\]|\\[(https?://[^\\s\\]]+)\\s+([^\\]]+)\\]";
 
 // [[File:id|thumb|caption]] — flags and caption are both optional, in any order.
 function thumbHtml(id, params) {
@@ -538,27 +539,39 @@ function thumbHtml(id, params) {
     (caption ? '<span class="cap">' + inline(caption) + "</span>" : "") + "</span>";
 }
 
+// <nowiki>…</nowiki> content is parked in a sentinel that no other rule can match,
+// then unpacked at the very end. Apostrophes are escaped too, or '' inside the
+// parked text could still pair up with italics elsewhere in the line.
+function hide(str) {
+  return "\u0001" + encodeURIComponent(str).replace(/'/g, "%27") + "\u0001";
+}
+function unhide(str) {
+  try { return decodeURIComponent(str); } catch (e) { return str; }
+}
+
 function inline(text) {
   const re = new RegExp(INLINE_SRC, "g");
   let out = "", last = 0, m;
   while ((m = re.exec(text)) !== null) {
     out += esc(text.slice(last, m.index));
     if (m[1] !== undefined) {
-      out += '<sup class="ref">[' + m[1] + "]</sup>";
+      out += esc(unhide(m[1]));
     } else if (m[2] !== undefined) {
-      out += "<strong>" + inline(m[2]) + "</strong>";
+      out += '<sup class="ref">[' + m[2] + "]</sup>";
     } else if (m[3] !== undefined) {
-      out += "<em>" + inline(m[3]) + "</em>";
+      out += "<strong>" + inline(m[3]) + "</strong>";
     } else if (m[4] !== undefined) {
-      out += thumbHtml(m[4].trim(), m[5]);
-    } else if (m[6] !== undefined) {
-      const target = m[6].trim();
-      const label = (m[7] || m[6]).trim();
+      out += "<em>" + inline(m[4]) + "</em>";
+    } else if (m[5] !== undefined) {
+      out += thumbHtml(m[5].trim(), m[6]);
+    } else if (m[7] !== undefined) {
+      const target = m[7].trim();
+      const label = (m[8] || m[7]).trim();
       const exists = has(target);
       out += '<a data-go="' + esc(target) + '" class="' + (exists ? "" : "new") +
         '" title="' + esc(exists ? target : target + " (not written yet)") + '">' + esc(label) + "</a>";
-    } else if (m[8] !== undefined) {
-      out += '<a href="' + esc(m[8]) + '" target="_blank" rel="noreferrer">' + esc(m[9]) + "</a>";
+    } else if (m[9] !== undefined) {
+      out += '<a href="' + esc(m[9]) + '" target="_blank" rel="noreferrer">' + esc(m[10]) + "</a>";
     }
     last = m.index + m[0].length;
   }
@@ -568,6 +581,7 @@ function inline(text) {
 
 function parse(raw) {
   let text = String(raw || "");
+  text = text.replace(/<nowiki>([\s\S]*?)<\/nowiki>/gi, (m, body) => hide(body));
   const categories = [];
   text = text.replace(/\[\[Category:([^\]|]+)\]\]/gi, (m, c) => {
     const v = c.trim();
@@ -1335,12 +1349,14 @@ function closeOverlay() { document.getElementById("overlay").innerHTML = ""; }
 
 function openDrawer() {
   const list = notesList();
+  const catCount = Object.keys(categoryMap()).length;
   document.getElementById("overlay").innerHTML =
     '<div class="scrim" data-close="1"></div><aside class="drawer">' +
     '<div class="drawer-h">Notepedia</div>' +
     '<button class="nav" data-nav="main">Main page</button>' +
     '<button class="nav" data-nav="index">All notes<span class="g">' + list.length + " written</span></button>" +
-    '<button class="nav" data-nav="categories">Categories</button>' +
+    '<button class="nav" data-nav="categories">Categories<span class="g">' + catCount +
+      " in use</span></button>" +
     '<button class="nav" data-nav="media">Images<span class="g">' + imgIndex.length + " stored</span></button>" +
     '<button class="nav" data-random="1">Random note</button>' +
     '<button class="nav" data-create="">New note</button>' +
@@ -1535,7 +1551,9 @@ function migrateHelpNote() {
   const n = state.notes[k];
   if (!n || n.text.indexOf("== Keeping your notes ==") === -1) return;
   if (n.text.indexOf("== Pictures ==") !== -1) {
-    if (n.text.indexOf("image=") !== -1) return;
+    if (n.text.indexOf("<nowiki>") !== -1) return;
+    n.text = n.text.replace("; Categories : Put [[Category:Name]] anywhere in the note",
+      "; Categories : Put <nowiki>[[Category:Aquarium]]</nowiki> anywhere in the note\n; Plain text : Wrap anything in nowiki tags to show the marks themselves rather than what they do");
     // Refresh a pictures section written before infobox images existed.
     n.text = n.text.replace(/== Pictures ==[\s\S]*?(?=\n== )/, PICTURES_DOC + "\n");
     n.updated = Date.now();
