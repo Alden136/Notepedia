@@ -921,6 +921,7 @@ function editorHtml(note) {
   h += '<div class="editnote">Saving records a revision you can read or restore later from History.</div>';
   h += '<div class="actions"><button class="btn" data-act="save">Save changes</button>' +
     '<button class="btn quiet" data-act="preview">' + (state.preview ? "Hide preview" : "Show preview") + "</button>" +
+    '<button class="btn quiet" data-act="rename">Rename</button>' +
     '<button class="btn quiet" data-act="cancel">Cancel</button>' +
     '<button class="btn danger" data-act="delete">Delete note</button></div>';
   window.__tools = tools;
@@ -1069,6 +1070,82 @@ function showUsage() {
   }).catch(() => { el.textContent = ""; });
 }
 
+/* ======================= navigation history =======================
+   Every screen and every overlay gets a history entry, so Android's back
+   button walks back through the app instead of closing it.               */
+let viewStack = [];
+let depth = 0;
+
+function snapshot(isOverlay) {
+  return {
+    view: { name: state.view.name, k: state.view.k, cat: state.view.cat },
+    tab: state.tab, searching: state.searching, query: state.query,
+    overlay: Boolean(isOverlay)
+  };
+}
+
+function sameScreen(a, b) {
+  if (!a || !b) return false;
+  return a.view.name === b.view.name && a.view.k === b.view.k && a.view.cat === b.view.cat &&
+    a.tab === b.tab && a.searching === b.searching && a.query === b.query;
+}
+
+function pushNav(opts) {
+  opts = opts || {};
+  // Capture live editor text before anything can re-render over it.
+  const ta = document.getElementById("draft");
+  if (ta && state.view.name === "note" && state.tab === "edit") state.draftCache = ta.value;
+  const snap = snapshot(opts.overlay);
+  const onOverlay = viewStack[depth] && viewStack[depth].overlay;
+  // An overlay entry is consumed rather than stacked on, so one back press
+  // always dismisses whatever is open and no more than that.
+  if (opts.replace || onOverlay) {
+    viewStack[depth] = snap;
+    try { history.replaceState({ d: depth }, ""); } catch (e) {}
+    return;
+  }
+  viewStack = viewStack.slice(0, depth + 1);
+  viewStack.push(snap);
+  depth = viewStack.length - 1;
+  try { history.pushState({ d: depth }, ""); } catch (e) {}
+}
+
+function draftIsDirty() {
+  const ta = document.getElementById("draft");
+  if (!ta || state.view.name !== "note") return false;
+  const note = state.notes[state.view.k];
+  return Boolean(note) && ta.value !== note.text;
+}
+
+function restoreState(snap) {
+  if (!snap) return;
+  const leavingEditor = !(snap.view.name === "note" && snap.tab === "edit" && snap.view.k === state.view.k);
+  state.view = { name: snap.view.name, k: snap.view.k, cat: snap.view.cat };
+  state.tab = snap.tab;
+  state.searching = snap.searching;
+  state.query = snap.query;
+  state.preview = false;
+  if (leavingEditor) state.draftCache = null;
+  render();
+}
+
+window.addEventListener("popstate", (e) => {
+  const target = e.state && typeof e.state.d === "number" ? e.state.d : 0;
+  const cur = viewStack[depth];
+  if (cur && cur.tab === "edit" && !cur.overlay && draftIsDirty()) {
+    if (!confirm("Leave without saving your changes?")) {
+      try { history.pushState({ d: depth }, ""); } catch (err) {}
+      return;
+    }
+  }
+  depth = Math.max(0, Math.min(target, viewStack.length - 1));
+  const next = viewStack[depth];
+  clearOverlayDom();
+  // Dismissing an overlay lands on the same screen, so leave the DOM alone —
+  // that keeps the editor's text and cursor exactly where they were.
+  if (!sameScreen(next, snapshot(false))) restoreState(next);
+});
+
 /* ============================ actions ============================ */
 function goTo(title) {
   const k = keyOf(title);
@@ -1079,7 +1156,8 @@ function goTo(title) {
   state.query = "";
   state.preview = false;
   state.draftCache = null;
-  closeOverlay();
+  clearOverlayDom();
+  pushNav();
   render();
   window.scrollTo(0, 0);
 }
@@ -1089,6 +1167,7 @@ function startEdit() {
   state.draftCache = state.notes[state.view.k].text;
   state.preview = false;
   state.tab = "edit";
+  pushNav();
   render();
   window.scrollTo(0, 0);
 }
@@ -1108,6 +1187,7 @@ function saveNote() {
   state.tab = "read";
   state.preview = false;
   state.draftCache = null;
+  pushNav({ replace: true });
   render();
   window.scrollTo(0, 0);
 }
@@ -1121,15 +1201,114 @@ function createNote(title) {
     state.notes[k] = { title: t, text: "", created: now, updated: now, revisions: [{ ts: now, size: 0, summary: "Note started", text: "" }] };
     save();
   }
-  closeOverlay();
+  clearOverlayDom();
   state.view = { name: "note", k: k };
   state.searching = false;
   state.query = "";
   state.draftCache = state.notes[k].text;
   state.preview = false;
   state.tab = "edit";
+  pushNav();
   render();
   window.scrollTo(0, 0);
+}
+
+// Rewrites [[Old]] and [[Old|label]] to the new title, leaving File: and
+// Category: links and any piped label exactly as they were.
+function retargetLinks(text, oldTitle, newTitle) {
+  return String(text).replace(/\[\[([^\]|]+?)(\|[^\]]*?)?\]\]/g, (whole, target, label) => {
+    if (/^\s*(File|Category):/i.test(target)) return whole;
+    if (keyOf(target) !== keyOf(oldTitle)) return whole;
+    return "[[" + newTitle + (label || "") + "]]";
+  });
+}
+
+function openRename() {
+  const note = state.notes[state.view.k];
+  if (!note) return;
+  const incoming = backlinksOf(note.title).length;
+  document.getElementById("overlay").innerHTML =
+    '<div class="scrim" data-close="1"></div><div class="modal"><h3>Rename this note</h3>' +
+    "<p>" + (incoming
+      ? "Links from " + incoming + " other note" + (incoming === 1 ? "" : "s") + " will be pointed at the new name."
+      : "Nothing links here yet, so this only changes the title.") + "</p>" +
+    '<input id="renameTitle" aria-label="New title" value="' + esc(note.title) + '">' +
+    '<div class="actions"><button class="btn" data-act="confirmRename">Rename</button>' +
+    '<button class="btn quiet" data-close="1">Cancel</button></div></div>';
+  pushNav({ overlay: true });
+  const input = document.getElementById("renameTitle");
+  input.focus();
+  input.select();
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") renameNote(input.value); });
+}
+
+function renameNote(rawTitle) {
+  const note = state.notes[state.view.k];
+  if (!note) return;
+  const oldTitle = note.title;
+  const oldKey = state.view.k;
+  const newTitle = String(rawTitle || "").trim().replace(/\s+/g, " ");
+  if (!newTitle) { toast("A note needs a title"); return; }
+  if (newTitle === oldTitle) { closeOverlay(); return; }
+
+  const newKey = keyOf(newTitle);
+  if (newKey !== oldKey && state.notes[newKey]) {
+    toast("There's already a note called " + state.notes[newKey].title + ".");
+    return;
+  }
+
+  // If the editor is open, its unsaved text is the text that should carry over.
+  const ta = document.getElementById("draft");
+  if (ta) note.text = ta.value;
+
+  const now = Date.now();
+  let touched = 0;
+  Object.keys(state.notes).forEach((k) => {
+    if (k === oldKey) return;
+    const other = state.notes[k];
+    const updated = retargetLinks(other.text, oldTitle, newTitle);
+    if (updated === other.text) return;
+    other.text = updated;
+    other.updated = now;
+    other.revisions = [{ ts: now, size: updated.length, summary: 'Renamed "' + oldTitle + '" to "' + newTitle + '"', text: updated }]
+      .concat(other.revisions || []).slice(0, 40);
+    touched++;
+  });
+
+  // A note can link to itself, and its own title may appear in its infobox.
+  note.text = retargetLinks(note.text, oldTitle, newTitle);
+  note.text = note.text.replace(/(\{\{Infobox\s*\|[\s\S]*?title\s*=\s*)([^|}]*)/i, (whole, head, value) =>
+    keyOf(value) === keyOf(oldTitle) ? head + newTitle : whole);
+  note.title = newTitle;
+  note.updated = now;
+  note.revisions = [{ ts: now, size: note.text.length, summary: 'Renamed from "' + oldTitle + '"', text: note.text }]
+    .concat(note.revisions || []).slice(0, 40);
+
+  if (newKey !== oldKey) {
+    state.notes[newKey] = note;
+    delete state.notes[oldKey];
+    // Section collapse state is keyed by title, so move it across too.
+    Object.keys(state.open).forEach((key) => {
+      if (key.indexOf(oldKey + ":") === 0) {
+        state.open[newKey + key.slice(oldKey.length)] = state.open[key];
+        delete state.open[key];
+      }
+    });
+    viewStack.forEach((snap) => { if (snap.view && snap.view.k === oldKey) snap.view.k = newKey; });
+  }
+
+  save();
+  clearOverlayDom();
+  state.view = { name: "note", k: newKey };
+  state.tab = "read";
+  state.draftCache = null;
+  state.preview = false;
+  pushNav({ replace: true });
+  render();
+  window.scrollTo(0, 0);
+  toast(touched
+    ? "Renamed, and " + touched + " note" + (touched === 1 ? "" : "s") + " now point" + (touched === 1 ? "s" : "") + " at the new name"
+    : "Renamed");
 }
 
 function deleteNote() {
@@ -1140,6 +1319,7 @@ function deleteNote() {
   state.view = { name: "index" };
   state.tab = "read";
   state.draftCache = null;
+  pushNav({ replace: true });
   render();
 }
 
@@ -1284,6 +1464,7 @@ function openImageModal(keepPosition) {
     '<div class="actions"><button class="btn" data-act="pickImage">Choose photo</button>' +
     '<button class="btn quiet" data-act="takePhoto">Take photo</button>' +
     '<button class="btn quiet" data-close="1">Cancel</button></div>' + gallery + "</div>";
+  pushNav({ overlay: true });
   hydrateImages();
 }
 
@@ -1304,6 +1485,7 @@ function openImageInfo(id) {
     '<button class="btn quiet" data-copyfield="' + esc(id) + '">Copy infobox line</button>' +
     '<button class="btn danger" data-delimg="' + esc(id) + '">Delete image</button>' +
     '<button class="btn quiet" data-close="1">Close</button></div></div>';
+  pushNav({ overlay: true });
   hydrateImages();
 }
 
@@ -1326,6 +1508,7 @@ function openLightbox(src, caption) {
     '<div class="lightbox" data-close="1"><button class="lclose" data-close="1" aria-label="Close">×</button>' +
     '<img src="' + esc(src) + '" alt="">' +
     (caption ? '<div class="lcap">' + esc(caption) + "</div>" : "") + "</div>";
+  pushNav({ overlay: true });
 }
 
 function blobToDataUrl(blob) {
@@ -1406,7 +1589,13 @@ function importNotes(file) {
 }
 
 /* ============================ overlays ============================ */
-function closeOverlay() { document.getElementById("overlay").innerHTML = ""; }
+function clearOverlayDom() { document.getElementById("overlay").innerHTML = ""; }
+
+// Closing goes through history so the back button and the scrim agree.
+function closeOverlay() {
+  if (viewStack[depth] && viewStack[depth].overlay) { history.back(); return; }
+  clearOverlayDom();
+}
 
 function openDrawer() {
   const list = notesList();
@@ -1425,6 +1614,7 @@ function openDrawer() {
     '<button class="nav" data-nav="settings">Your notebook<span class="g">export, import, storage</span></button>' +
     (deferredPrompt ? '<button class="nav" data-act="install">Add to home screen</button>' : "") +
     '<div class="drawer-f">Notes live on this device only. Export now and then.</div></aside>';
+  pushNav({ overlay: true });
 }
 
 function openCreate(prefill) {
@@ -1434,6 +1624,7 @@ function openCreate(prefill) {
     '<input id="newTitle" placeholder="Note title" aria-label="Note title" value="' + esc(prefill || "") + '">' +
     '<div class="actions"><button class="btn" data-act="confirmCreate">Create note</button>' +
     '<button class="btn quiet" data-close="1">Cancel</button></div></div>';
+  pushNav({ overlay: true });
   const input = document.getElementById("newTitle");
   input.focus();
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") createNote(input.value); });
@@ -1481,8 +1672,16 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (d.go !== undefined) { goTo(d.go); return; }
-  if (d.cat !== undefined) { state.view = { name: "category", cat: d.cat }; state.searching = false; closeOverlay(); render(); window.scrollTo(0, 0); return; }
-  if (d.create !== undefined) { closeOverlay(); openCreate(d.create); return; }
+  if (d.cat !== undefined) {
+    state.view = { name: "category", cat: d.cat };
+    state.searching = false;
+    clearOverlayDom();
+    pushNav();
+    render();
+    window.scrollTo(0, 0);
+    return;
+  }
+  if (d.create !== undefined) { clearOverlayDom(); openCreate(d.create); return; }
   if (d.random !== undefined) {
     const list = notesList();
     if (list.length) goTo(list[Math.floor(Math.random() * list.length)].title);
@@ -1492,7 +1691,8 @@ document.addEventListener("click", (e) => {
     state.view = { name: d.nav };
     state.tab = "read";
     state.searching = false;
-    closeOverlay();
+    clearOverlayDom();
+    pushNav();
     render();
     window.scrollTo(0, 0);
     return;
@@ -1500,7 +1700,15 @@ document.addEventListener("click", (e) => {
   if (d.tab !== undefined) {
     if (el.disabled) return;
     if (d.tab === "edit") startEdit();
-    else { state.tab = d.tab; state.preview = false; state.searching = false; render(); window.scrollTo(0, 0); }
+    else {
+      const replacing = state.tab === "edit";
+      state.tab = d.tab;
+      state.preview = false;
+      state.searching = false;
+      pushNav({ replace: replacing });
+      render();
+      window.scrollTo(0, 0);
+    }
     return;
   }
   if (d.sec !== undefined) {
@@ -1526,6 +1734,7 @@ document.addEventListener("click", (e) => {
     state.draftCache = rev.text;
     state.tab = "edit";
     state.preview = false;
+    pushNav();
     render();
     const s = document.getElementById("summary");
     if (s) s.value = "Restored version from " + fmtDate(rev.ts);
@@ -1534,11 +1743,19 @@ document.addEventListener("click", (e) => {
   }
   if (d.act !== undefined) {
     if (d.act === "save") saveNote();
+    else if (d.act === "rename") openRename();
+    else if (d.act === "confirmRename") {
+      const input = document.getElementById("renameTitle");
+      renameNote(input ? input.value : "");
+    }
     else if (d.act === "confirmCreate") {
       const input = document.getElementById("newTitle");
       createNote(input ? input.value : "");
     }
-    else if (d.act === "cancel") { state.tab = "read"; state.preview = false; state.draftCache = null; render(); window.scrollTo(0, 0); }
+    else if (d.act === "cancel") {
+      state.tab = "read"; state.preview = false; state.draftCache = null;
+      pushNav({ replace: true }); render(); window.scrollTo(0, 0);
+    }
     else if (d.act === "preview") { state.draftCache = document.getElementById("draft").value; state.preview = !state.preview; render(); }
     else if (d.act === "delete") deleteNote();
     else if (d.act === "export") exportNotes();
@@ -1576,11 +1793,14 @@ document.addEventListener("click", (e) => {
 
 document.getElementById("menuBtn").addEventListener("click", openDrawer);
 document.getElementById("homeBtn").addEventListener("click", () => {
-  state.view = { name: "main" }; state.tab = "read"; state.searching = false; render(); window.scrollTo(0, 0);
+  state.view = { name: "main" }; state.tab = "read"; state.searching = false;
+  pushNav(); render(); window.scrollTo(0, 0);
 });
 document.getElementById("searchBtn").addEventListener("click", () => {
+  const leaving = state.searching;
   state.searching = !state.searching;
   if (!state.searching) state.query = "";
+  pushNav({ replace: leaving });
   render();
 });
 document.getElementById("fab").addEventListener("click", () => {
@@ -1647,6 +1867,9 @@ function migrateHelpNote() {
   }
   applyTheme();
   migrateHelpNote();
+  viewStack = [snapshot(false)];
+  depth = 0;
+  try { history.replaceState({ d: 0 }, ""); } catch (e) {}
   render();
   refreshImgIndex().then(() => { hydrateImages(); });
   if ("serviceWorker" in navigator) {
