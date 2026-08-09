@@ -1,5 +1,5 @@
 // Notepedia offline cache. Bump CACHE when you change any file.
-const CACHE = "notepedia-v3";
+const CACHE = "notepedia-v4";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {

@@ -227,6 +227,14 @@ sup.ref { font-size: 10px; line-height: 1; vertical-align: super; }
 .setting { border-bottom: 1px solid var(--light); padding: 12px 0; }
 .setting b { display: block; font-size: 14px; }
 .setting span { font-size: 12px; color: var(--sub); }
+/* ---- tables ---- */
+.tablewrap { overflow-x: auto; margin: 0 0 14px; -webkit-overflow-scrolling: touch; }
+table.wikitable { border-collapse: collapse; border: 1px solid var(--rule); background: var(--paper); font-size: 13px; }
+table.wikitable caption { font-weight: 700; text-align: left; padding: 2px 0 6px; font-size: 13px; }
+table.wikitable th, table.wikitable td { border: 1px solid var(--rule); padding: 6px 9px; text-align: left; vertical-align: top; }
+table.wikitable th { background: var(--light); font-weight: 700; }
+table.wikitable tr:nth-child(even) td { background: var(--shade); }
+
 /* ---- images ---- */
 .thumb { display: block; border: 1px solid var(--rule); background: var(--chrome); padding: 3px; margin: 0 0 12px; }
 .thumb img { display: block; width: 100%; height: auto; background: var(--light); cursor: zoom-in; }
@@ -469,6 +477,26 @@ In the summary box it becomes an ''image'' field. If the note has no box yet, on
 
 Tap any picture to see it full size. The Images page in the menu lists everything you've added and what's using it.`;
 
+const TABLES_DOC = `== Tables ==
+Tap the grid button in the toolbar to drop in a starter table, then fill it in. The shape is:
+
+<nowiki>{| class="wikitable"
+! Port !! Service
+|-
+| 22 || SSH
+|-
+| 443 || HTTPS
+|}</nowiki>
+
+A line beginning with ! makes header cells, a line beginning with | makes normal ones, and !! or || puts two cells on one line. A line of just |- starts a new row. Add <nowiki>|+ A caption</nowiki> under the first line for a heading above the table. Wide tables scroll sideways rather than squashing the page.
+
+== Linking to a section ==
+Put a # after the note title to land on a particular section, which opens even if it was collapsed:
+
+<nowiki>[[CompTIA A+ Core 1#Plan]]</nowiki>
+
+Leave the title off to point at a section of the note you're already in — <nowiki>[[#Tables]]</nowiki>. The § button in the toolbar starts one of these for you.`;
+
 const SEED = [
   { title: "Notepedia:How to write notes", text: `Notepedia stores plain text with a few marks borrowed from wiki syntax. Everything below works in the editor.
 
@@ -487,6 +515,8 @@ const SEED = [
 A link to a note that doesn't exist yet shows up red. Tapping it opens a blank note with that title already filled in, so you can write forward and let the notebook catch up. Every note lists what links to it at the bottom.
 
 ${PICTURES_DOC}
+
+${TABLES_DOC}
 
 == Keeping your notes ==
 Everything lives on this phone, in this browser. Nothing is uploaded. Open the menu and use ''Export all notes'' now and then — it writes one JSON file you can drop into a new phone with ''Import notes''.
@@ -550,6 +580,8 @@ function plainText(t) {
     .replace(/\[\[Category:[^\]]*\]\]/gi, " ")
     .replace(/<ref>[\s\S]*?<\/ref>/g, " ")
     .replace(/^-{3,}$/gm, " ")
+    .replace(/^\{\|.*$/gm, " ").replace(/^\|\}.*$/gm, " ").replace(/^\|[-+].*$/gm, " ")
+    .replace(/\|\||!!/g, " ").replace(/^[|!]\s?/gm, " ")
     .replace(/^;\s*([^:]+):/gm, "$1 —")
     .replace(/^[=;:*#]+\s*/gm, " ")
     .replace(/=+\s*$/gm, " ")
@@ -604,6 +636,8 @@ function unhide(str) {
   try { return decodeURIComponent(str); } catch (e) { return str; }
 }
 
+let currentNoteTitle = "";
+
 function inline(text) {
   const re = new RegExp(INLINE_SRC, "g");
   let out = "", last = 0, m;
@@ -620,11 +654,17 @@ function inline(text) {
     } else if (m[5] !== undefined) {
       out += thumbHtml(m[5].trim(), m[6]);
     } else if (m[7] !== undefined) {
-      const target = m[7].trim();
-      const label = (m[8] || m[7]).trim();
+      // [[Page]], [[Page#Section]], [[#Section]], any of them with |a label
+      const raw = m[7].trim();
+      const hash = raw.indexOf("#");
+      const page = hash === -1 ? raw : raw.slice(0, hash).trim();
+      const anchor = hash === -1 ? "" : raw.slice(hash + 1).trim();
+      const target = page || currentNoteTitle;
+      const label = (m[8] || (anchor ? (page ? page + " § " + anchor : "§ " + anchor) : raw)).trim();
       const exists = has(target);
-      out += '<a data-go="' + esc(target) + '" class="' + (exists ? "" : "new") +
-        '" title="' + esc(exists ? target : target + " (not written yet)") + '">' + esc(label) + "</a>";
+      const tip = exists ? (anchor ? target + ", section " + anchor : target) : target + " (not written yet)";
+      out += '<a data-go="' + esc(target) + '"' + (anchor ? ' data-anchor="' + esc(anchor) + '"' : "") +
+        ' class="' + (exists ? "" : "new") + '" title="' + esc(tip) + '">' + esc(label) + "</a>";
     } else if (m[9] !== undefined) {
       out += '<a href="' + esc(m[9]) + '" target="_blank" rel="noreferrer">' + esc(m[10]) + "</a>";
     }
@@ -671,6 +711,30 @@ function parse(raw) {
     const h = s.match(/^(={2,4})\s*(.+?)\s*\1$/);
     if (h) { flush(); blocks.push({ t: "h", level: h[1].length, text: h[2] }); continue; }
     if (/^----+$/.test(s)) { flush(); blocks.push({ t: "hr" }); continue; }
+    if (s.indexOf("{|") === 0) {
+      flush();
+      const rows = [];
+      let caption = "", row = null;
+      i++;
+      for (; i < lines.length; i++) {
+        const c = lines[i].trim();
+        if (c.indexOf("|}") === 0) break;
+        if (!c) continue;
+        if (c.indexOf("|+") === 0) { caption = c.slice(2).trim(); continue; }
+        if (c.indexOf("|-") === 0) { row = null; continue; }
+        if (c[0] !== "|" && c[0] !== "!") {
+          // a cell continued onto the next line
+          if (row && row.cells.length) row.cells[row.cells.length - 1] += " " + c;
+          continue;
+        }
+        const header = c[0] === "!";
+        const parts = c.slice(1).split(header ? "!!" : "||");
+        if (!row) { row = { header: header, cells: [] }; rows.push(row); }
+        parts.forEach((cell) => row.cells.push(cell.trim()));
+      }
+      blocks.push({ t: "table", caption: caption, rows: rows });
+      continue;
+    }
     if (/^[*#]\s?/.test(s)) {
       flush();
       const ordered = s[0] === "#";
@@ -723,6 +787,10 @@ function parse(raw) {
     if (b.text !== undefined) b.text = mark(b.text);
     if (b.t === "ul" || b.t === "ol") b.items = b.items.map(mark);
     if (b.t === "dl") b.items = b.items.map((pair) => [mark(pair[0]), mark(pair[1])]);
+    if (b.t === "table") {
+      b.caption = mark(b.caption);
+      b.rows.forEach((r) => { r.cells = r.cells.map(mark); });
+    }
   };
   lead.forEach(markBlock);
   sections.forEach((sec) => { sec.title = mark(sec.title); sec.blocks.forEach(markBlock); });
@@ -738,6 +806,16 @@ function blocksHtml(blocks) {
     if (b.t === "indent") return '<p class="indent">' + inline(b.text) + "</p>";
     if (b.t === "ul") return "<ul>" + b.items.map((i) => "<li>" + inline(i) + "</li>").join("") + "</ul>";
     if (b.t === "ol") return "<ol>" + b.items.map((i) => "<li>" + inline(i) + "</li>").join("") + "</ol>";
+    if (b.t === "table") {
+      let t = '<div class="tablewrap"><table class="wikitable">';
+      if (b.caption) t += "<caption>" + inline(b.caption) + "</caption>";
+      b.rows.forEach((r) => {
+        t += "<tr>" + r.cells.map((c) => r.header
+          ? "<th>" + inline(c) + "</th>"
+          : "<td>" + inline(c) + "</td>").join("") + "</tr>";
+      });
+      return t + "</table></div>";
+    }
     if (b.t === "dl") return "<dl>" + b.items.map((p) => "<dt>" + inline(p[0]) + "</dt>" + (p[1] ? "<dd>" + inline(p[1]) + "</dd>" : "")).join("") + "</dl>";
     return "";
   }).join("");
@@ -766,6 +844,7 @@ function categoryMap() {
 function articleHtml(note, isPreview) {
   const doc = parse(note.text);
   const nk = keyOf(note.title);
+  currentNoteTitle = note.title;
   const isOpen = (i) => state.open[nk + ":" + i] !== false;
   let h = "";
   h += '<h1 class="title">' + esc(note.title) + "</h1>";
@@ -910,7 +989,9 @@ function editorHtml(note) {
     ["Numbered", "\n# ", "", true, "1."],
     ["Term and meaning", "\n; ", " : ", true, ";"],
     ["Footnote", "<ref>", "</ref>", false, "ref"],
-    ["Category", "\n[[Category:", "]]", true, "cat"]
+    ["Category", "\n[[Category:", "]]", true, "cat"],
+    ["Table", "\n{| class=\"wikitable\"\n! Heading !! Heading\n|-\n| ", " || \n|-\n|  || \n|}\n", true, "▦"],
+    ["Link to a section", "[[#", "]]", false, "§"]
   ];
   h += '<div class="toolbar">';
   tools.forEach((t, i) => { h += '<button class="tool" data-tool="' + i + '" title="' + esc(t[0]) + '">' + t[4] + "</button>"; });
@@ -1147,7 +1228,31 @@ window.addEventListener("popstate", (e) => {
 });
 
 /* ============================ actions ============================ */
-function goTo(title) {
+// Finds which collapsible section a #anchor refers to, by title.
+function sectionIndex(noteKey, anchor) {
+  const note = state.notes[noteKey];
+  if (!note || !anchor) return -1;
+  const secs = parse(note.text).sections;
+  for (let i = 0; i < secs.length; i++) {
+    if (keyOf(secs[i].title) === keyOf(anchor)) return i;
+  }
+  return -1;
+}
+
+function jumpToSection(noteKey, anchor) {
+  const idx = sectionIndex(noteKey, anchor);
+  if (idx === -1) {
+    toast('No section called "' + anchor + '" in that note');
+    window.scrollTo(0, 0);
+    return;
+  }
+  requestAnimationFrame(() => {
+    const el = document.getElementById("sec-" + idx);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+function goTo(title, anchor) {
   const k = keyOf(title);
   if (!state.notes[k]) { openCreate(title); return; }
   state.view = { name: "note", k: k };
@@ -1157,9 +1262,15 @@ function goTo(title) {
   state.preview = false;
   state.draftCache = null;
   clearOverlayDom();
+  // Open the target section before painting, so the jump lands in the right place.
+  if (anchor) {
+    const idx = sectionIndex(k, anchor);
+    if (idx !== -1) state.open[keyOf(state.notes[k].title) + ":" + idx] = true;
+  }
   pushNav();
   render();
-  window.scrollTo(0, 0);
+  if (anchor) jumpToSection(k, anchor);
+  else window.scrollTo(0, 0);
 }
 
 function startEdit() {
@@ -1671,7 +1782,7 @@ document.addEventListener("click", (e) => {
     } else toast("Copying isn't available here");
     return;
   }
-  if (d.go !== undefined) { goTo(d.go); return; }
+  if (d.go !== undefined) { goTo(d.go, d.anchor || ""); return; }
   if (d.cat !== undefined) {
     state.view = { name: "category", cat: d.cat };
     state.searching = false;
@@ -1827,25 +1938,31 @@ let deferredPrompt = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredPrompt = e; });
 
 /* ============================ boot ============================ */
-// Adds the pictures section to the help note for notebooks made before images existed.
+// Keeps the help note current for notebooks made before a feature existed.
+// Each patch is idempotent, so this can run on every launch.
 function migrateHelpNote() {
   const k = keyOf("Notepedia:How to write notes");
   const n = state.notes[k];
   if (!n || n.text.indexOf("== Keeping your notes ==") === -1) return;
-  if (n.text.indexOf("== Pictures ==") !== -1) {
-    if (n.text.indexOf("<nowiki>") !== -1) return;
+  const before = n.text;
+
+  if (n.text.indexOf("== Pictures ==") === -1) {
+    n.text = n.text.replace("== Keeping your notes ==", PICTURES_DOC + "\n\n== Keeping your notes ==");
+  } else if (n.text.indexOf("<nowiki>") === -1) {
     n.text = n.text.replace("; Categories : Put [[Category:Name]] anywhere in the note",
-      "; Categories : Put <nowiki>[[Category:Aquarium]]</nowiki> anywhere in the note\n; Plain text : Wrap anything in nowiki tags to show the marks themselves rather than what they do");
-    // Refresh a pictures section written before infobox images existed.
+      "; Categories : Put <nowiki>[[Category:Aquarium]]</nowiki> anywhere in the note\n" +
+      "; Plain text : Wrap anything in nowiki tags to show the marks themselves rather than what they do");
     n.text = n.text.replace(/== Pictures ==[\s\S]*?(?=\n== )/, PICTURES_DOC + "\n");
-    n.updated = Date.now();
-    n.revisions = [{ ts: n.updated, size: n.text.length, summary: "Updated the pictures section", text: n.text }].concat(n.revisions || []);
-    save();
-    return;
   }
-  n.text = n.text.replace("== Keeping your notes ==", PICTURES_DOC + "\n\n== Keeping your notes ==");
+
+  if (n.text.indexOf("== Tables ==") === -1) {
+    n.text = n.text.replace("== Keeping your notes ==", TABLES_DOC + "\n\n== Keeping your notes ==");
+  }
+
+  if (n.text === before) return;
   n.updated = Date.now();
-  n.revisions = [{ ts: n.updated, size: n.text.length, summary: "Added the pictures section", text: n.text }].concat(n.revisions || []);
+  n.revisions = [{ ts: n.updated, size: n.text.length, summary: "Updated the syntax guide", text: n.text }]
+    .concat(n.revisions || []).slice(0, 40);
   save();
 }
 
